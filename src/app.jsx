@@ -1,127 +1,170 @@
-// Main App
-const { useState, useMemo, useCallback } = React;
+import { useState, useEffect } from 'react'
+import { supabase, signUp, signIn, signOut, getCurrentUser } from './api/supabase.js'
 
-const App = () => {
-  const [data, setData] = useState(() => ({
-    projects: window.TCM_DATA.projects,
-    files: window.TCM_DATA.files,
-  }));
-  const [active, setActive] = useState('dashboard');
-  const [uploadOpen, setUploadOpen] = useState(false);
-  const [drawerProj, setDrawerProj] = useState(null);
-  const [chatOpen, setChatOpen] = useState(false);
-  const toast = useToast();
+export default function App() {
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [mode, setMode] = useState('signin')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [fullName, setFullName] = useState('')
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
-  const stats = useMemo(() => ({
-    projects: data.projects.length,
-    files: data.files.length,
-    types: new Set(data.files.map(f => f.type)).size,
-  }), [data]);
+  useEffect(() => {
+    getCurrentUser().then(u => {
+      setUser(u)
+      setLoading(false)
+    }).catch(() => setLoading(false))
 
-  const handleUpload = useCallback((items) => {
-    setData(d => {
-      const newFiles = items.map(it => ({
-        id: 'u' + Math.random().toString(36).slice(2,7),
-        projectId: it.projectId,
-        type: it.type,
-        baseName: it.name.replace(/\.\w+$/, '').replace(/_(rev\s*\d+|v\d+|\d{4}-\d{2}-\d{2})$/i, ''),
-        name: it.name,
-        rev: it.version,
-        date: new Date().toISOString().slice(0,10),
-        ext: (it.name.split('.').pop() || 'pdf').toLowerCase(),
-        size: it.size,
-        uploader: 'นภัสวรรณ',
-        isLatest: false,
-      }));
-      const allFiles = [...d.files, ...newFiles];
-      // recompute isLatest
-      const groups = {};
-      allFiles.forEach(f => {
-        const k = `${f.projectId}|${f.type}|${f.baseName}`;
-        if (!groups[k]) groups[k] = [];
-        groups[k].push(f);
-      });
-      Object.values(groups).forEach(g => {
-        g.sort((a,b) => new Date(b.date) - new Date(a.date));
-        g.forEach((f, i) => { f.isLatest = i === 0; });
-      });
-      return { ...d, files: allFiles };
-    });
-  }, []);
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null)
+    })
 
-  const handleDeleteFile = useCallback((id) => {
-    setData(d => ({ ...d, files: d.files.filter(f => f.id !== id) }));
-  }, []);
+    return () => authListener.subscription.unsubscribe()
+  }, [])
 
-  const handleAIDownload = useCallback((fileName) => {
-    toast(`เริ่มดาวน์โหลด: ${fileName}`);
-  }, [toast]);
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setError('')
+    setSubmitting(true)
+    try {
+      if (mode === 'signup') {
+        await signUp(email, password, fullName)
+        setError('✅ สมัครสำเร็จ! กรุณายืนยัน Email ของคุณ')
+      } else {
+        await signIn(email, password)
+      }
+    } catch (err) {
+      setError('❌ ' + (err.message || 'เกิดข้อผิดพลาด'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
-  const handleAIZip = useCallback((projectCode) => {
-    toast(`สร้าง Zip โครงการ ${projectCode}...`);
-  }, [toast]);
+  const handleLogout = async () => {
+    await signOut()
+    setUser(null)
+  }
 
-  const currentProject = drawerProj ? data.projects.find(p => p.id === drawerProj) : null;
+  if (loading) {
+    return (
+      <div className="center-screen">
+        <div className="spinner"></div>
+      </div>
+    )
+  }
+
+  if (user) {
+    return (
+      <div className="app-container">
+        <header className="app-header">
+          <h1>📋 TCM Document Agent</h1>
+          <div className="user-info">
+            <span>{user.email}</span>
+            <button onClick={handleLogout} className="btn-secondary">ออกจากระบบ</button>
+          </div>
+        </header>
+
+        <main className="app-main">
+          <div className="welcome-card">
+            <h2>🎉 ยินดีต้อนรับ!</h2>
+            <p>คุณ Login เข้าระบบสำเร็จแล้ว</p>
+            <p className="muted">Email: <strong>{user.email}</strong></p>
+
+            <div className="info-section">
+              <h3>📊 สถานะระบบ</h3>
+              <ul>
+                <li>✅ Supabase: Connected</li>
+                <li>✅ Authentication: Working</li>
+                <li>✅ Database: Ready</li>
+                <li>✅ Storage: Ready</li>
+              </ul>
+            </div>
+
+            <div className="info-section">
+              <h3>🚀 ขั้นตอนต่อไป</h3>
+              <p>ระบบจัดการเอกสารกำลังพัฒนา:</p>
+              <ul>
+                <li>📁 Project Management</li>
+                <li>📄 Document Upload</li>
+                <li>🔍 Search & Filter</li>
+                <li>📥 Download</li>
+              </ul>
+            </div>
+          </div>
+        </main>
+      </div>
+    )
+  }
 
   return (
-    <div className="app">
-      <Topbar
-        active={active}
-        onNav={(v) => {
-          setActive(v);
-          if (v === 'ai') setChatOpen(true);
-        }}
-        onOpenUpload={() => setUploadOpen(true)}
-      />
-
-      <Hero
-        onUpload={() => setUploadOpen(true)}
-        onAsk={() => setChatOpen(true)}
-        stats={stats}
-      />
-
-      <Dashboard
-        data={data}
-        onOpenProject={setDrawerProj}
-        onOpenUpload={() => setUploadOpen(true)}
-      />
-
-      <footer className="footer">
-        <div className="container">
-          <div>TCM Document Agent · v5 Engineering Edition · Powered by Claude Haiku 4.5</div>
-          <div style={{fontSize: 12, marginTop: 4, color: 'var(--gray-400)'}}>
-            © 2026 TCM · Phase 2: เชื่อม OneDrive (กำลังพัฒนา)
-          </div>
+    <div className="auth-screen">
+      <div className="auth-card">
+        <div className="auth-header">
+          <h1>📋 TCM Document Agent</h1>
+          <p className="muted">ระบบจัดการเอกสารทีม</p>
         </div>
-      </footer>
 
-      <UploadModal
-        open={uploadOpen}
-        onClose={() => setUploadOpen(false)}
-        projects={data.projects}
-        onUpload={handleUpload}
-      />
+        <div className="auth-tabs">
+          <button
+            className={mode === 'signin' ? 'tab active' : 'tab'}
+            onClick={() => { setMode('signin'); setError('') }}
+          >
+            เข้าสู่ระบบ
+          </button>
+          <button
+            className={mode === 'signup' ? 'tab active' : 'tab'}
+            onClick={() => { setMode('signup'); setError('') }}
+          >
+            สมัครสมาชิก
+          </button>
+        </div>
 
-      {currentProject && (
-        <ProjectDrawer
-          project={currentProject}
-          files={data.files}
-          onClose={() => setDrawerProj(null)}
-          onDeleteFile={handleDeleteFile}
-        />
-      )}
+        <form onSubmit={handleSubmit} className="auth-form">
+          {mode === 'signup' && (
+            <div className="form-group">
+              <label>ชื่อ-นามสกุล</label>
+              <input
+                type="text"
+                value={fullName}
+                onChange={e => setFullName(e.target.value)}
+                placeholder="ชื่อของคุณ"
+                required
+              />
+            </div>
+          )}
 
-      {!chatOpen && <ChatFab onClick={() => setChatOpen(true)}/>}
-      <AIChat
-        open={chatOpen}
-        onClose={() => setChatOpen(false)}
-        data={data}
-        onTriggerDownload={handleAIDownload}
-        onTriggerZip={handleAIZip}
-      />
+          <div className="form-group">
+            <label>Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="your-email@teamcm.co.th"
+              required
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="อย่างน้อย 6 ตัว"
+              minLength={6}
+              required
+            />
+          </div>
+
+          {error && <div className="alert">{error}</div>}
+
+          <button type="submit" className="btn-primary" disabled={submitting}>
+            {submitting ? 'กำลังโหลด...' : (mode === 'signin' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก')}
+          </button>
+        </form>
+      </div>
     </div>
-  );
-};
-
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<ToastProvider><App/></ToastProvider>);
+  )
+}
