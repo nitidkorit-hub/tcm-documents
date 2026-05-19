@@ -16,7 +16,8 @@
       "Bash(cd \"/d/AI Project/AI Agent Document\" && find . -maxdepth 2 -type f -name \"*.html\" -o -name \"*.js\" -o -name \"*.jsx\" -o -name \"*.css\" | head -20)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(git mv *)"
     ]
   }
 }
