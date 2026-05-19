@@ -1,0 +1,227 @@
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn('⚠️ Missing Supabase credentials. Check .env file');
+}
+
+export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '');
+
+// ============ AUTH ============
+export async function signUp(email, password, fullName) {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { full_name: fullName }
+    }
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function signIn(email, password) {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function signOut() {
+  const { error } = await supabase.auth.signOut();
+  if (error) throw error;
+}
+
+export async function getCurrentUser() {
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error) throw error;
+  return user;
+}
+
+export function onAuthStateChange(callback) {
+  return supabase.auth.onAuthStateChange(callback);
+}
+
+// ============ PROJECTS ============
+export async function fetchProjects() {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function createProject(projectData) {
+  const user = await getCurrentUser();
+  const { data, error } = await supabase
+    .from('projects')
+    .insert([{
+      ...projectData,
+      created_by: user.id
+    }])
+    .select();
+  if (error) throw error;
+  return data?.[0];
+}
+
+export async function updateProject(projectId, updates) {
+  const { data, error } = await supabase
+    .from('projects')
+    .update(updates)
+    .eq('id', projectId)
+    .select();
+  if (error) throw error;
+  return data?.[0];
+}
+
+export async function deleteProject(projectId) {
+  const { error } = await supabase
+    .from('projects')
+    .delete()
+    .eq('id', projectId);
+  if (error) throw error;
+}
+
+// ============ FILES ============
+export async function fetchFiles(projectId) {
+  const { data, error } = await supabase
+    .from('files')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function fetchLatestFiles(limit = 10) {
+  const { data, error } = await supabase
+    .from('files')
+    .select('*')
+    .eq('is_latest', true)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
+export async function uploadFile(projectId, file, fileType, uploaderName) {
+  const user = await getCurrentUser();
+
+  // 1. Upload to storage
+  const fileName = `${projectId}/${Date.now()}-${file.name}`;
+  const { data: storageData, error: storageError } = await supabase.storage
+    .from('documents')
+    .upload(fileName, file);
+
+  if (storageError) throw storageError;
+
+  // 2. Insert file record
+  const baseName = file.name.replace(/\.\w+$/, '').replace(/_(rev\s*\d+|v\d+|\d{4}-\d{2}-\d{2})$/i, '');
+  const ext = file.name.split('.').pop();
+
+  const { data: fileData, error: fileError } = await supabase
+    .from('files')
+    .insert([{
+      project_id: projectId,
+      name: file.name,
+      type: fileType,
+      base_name: baseName,
+      size: Math.round(file.size / 1024),
+      ext: ext,
+      storage_path: fileName,
+      uploader_id: user.id,
+      uploader_name: uploaderName,
+      is_latest: true
+    }])
+    .select();
+
+  if (fileError) throw fileError;
+
+  // 3. Mark old versions as not latest
+  await supabase
+    .from('files')
+    .update({ is_latest: false })
+    .eq('base_name', baseName)
+    .eq('project_id', projectId)
+    .neq('id', fileData[0].id);
+
+  return fileData?.[0];
+}
+
+export async function deleteFile(fileId) {
+  const { error } = await supabase
+    .from('files')
+    .delete()
+    .eq('id', fileId);
+  if (error) throw error;
+}
+
+export async function downloadFile(fileId, fileName) {
+  const { data, error } = await supabase
+    .from('files')
+    .select('storage_path')
+    .eq('id', fileId)
+    .single();
+
+  if (error) throw error;
+
+  const { data: fileData, error: downloadError } = await supabase.storage
+    .from('documents')
+    .download(data.storage_path);
+
+  if (downloadError) throw downloadError;
+
+  // Trigger download
+  const url = URL.createObjectURL(fileData);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName || 'file';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ============ ACTIVITY/TIMELINE ============
+export async function fetchActivity(projectId, limit = 6) {
+  const { data, error } = await supabase
+    .from('activity')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
+export async function logActivity(projectId, action, details, fileId = null) {
+  const user = await getCurrentUser();
+  const { error } = await supabase
+    .from('activity')
+    .insert([{
+      project_id: projectId,
+      action,
+      details,
+      file_id: fileId,
+      user_id: user.id,
+      user_name: user.user_metadata?.full_name || user.email
+    }]);
+  if (error) throw error;
+}
+
+// ============ STATS ============
+export async function fetchStats() {
+  const [projectsData, filesData] = await Promise.all([
+    supabase.from('projects').select('id', { count: 'exact' }),
+    supabase.from('files').select('id', { count: 'exact' })
+  ]);
+
+  return {
+    projects: projectsData.count || 0,
+    files: filesData.count || 0,
+    types: 8 // Fixed for now
+  };
+}
