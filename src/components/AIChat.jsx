@@ -10,12 +10,24 @@ function processQuery(text, ctx) {
   const t = text.toLowerCase()
   const { projects, files } = ctx
 
-  // Find project by code or name
-  const matchProject = projects.find((p) => {
+  // Find project: try code first, then partial name match
+  let matchProject = null
+  for (const p of projects) {
     const code = (p.code || '').toLowerCase()
-    const name = (p.name || '').toLowerCase()
-    return code && t.includes(code) || (name && t.includes(name.toLowerCase()))
-  })
+    if (code && (t.includes(code) || code.includes(t.replace(/\s/g, '')))) {
+      matchProject = p
+      break
+    }
+  }
+  if (!matchProject) {
+    for (const p of projects) {
+      const name = (p.name || '').toLowerCase()
+      if (name && name.length > 2 && t.includes(name.slice(0, Math.min(4, name.length)))) {
+        matchProject = p
+        break
+      }
+    }
+  }
 
   // Find type
   let matchType = null
@@ -148,7 +160,17 @@ export default function AIChat({ open, onClose }) {
 
     const result = processQuery(text, ctx)
     setThinking(false)
-    setMsgs((m) => [...m, { role: 'bot', ...result }])
+    setMsgs((m) => [
+      ...m,
+      {
+        role: 'bot',
+        text: result.reply,
+        intent: result.intent,
+        fileName: result.fileName,
+        projectCode: result.projectCode,
+        fileId: result.fileId,
+      },
+    ])
   }
 
   const triggerDownload = async (fileId, fileName) => {
