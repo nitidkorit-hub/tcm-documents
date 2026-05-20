@@ -1,6 +1,7 @@
 import Icon from './Icon.jsx'
+import { fmtDate, fmtSize, TYPE_LABEL, TYPE_COLOR } from '../utils/format.js'
 
-export default function Hero({ stats, onUpload, onAsk }) {
+export default function Hero({ stats, recentFiles, projects, onUpload, onAsk }) {
   return (
     <section className="hero">
       <div className="container">
@@ -52,14 +53,55 @@ export default function Hero({ stats, onUpload, onAsk }) {
               </div>
             </div>
           </div>
-          <HeroPreview />
+          <HeroPreview recentFiles={recentFiles} projects={projects} />
         </div>
       </div>
     </section>
   )
 }
 
-function HeroPreview() {
+function HeroPreview({ recentFiles = [], projects = [] }) {
+  const projectMap = {}
+  projects.forEach((p) => (projectMap[p.id] = p))
+
+  // Empty state - use placeholder
+  if (recentFiles.length === 0) {
+    return (
+      <div className="hero-preview">
+        <div className="hero-preview-head">
+          <div className="lights">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <div className="label">/ ระบบจัดการเอกสาร</div>
+        </div>
+        <div className="hero-preview-body">
+          <div style={{ padding: '36px 12px', textAlign: 'center', color: 'rgba(255,255,255,0.5)' }}>
+            <Icon name="folder" size={36} />
+            <div style={{ marginTop: 12, fontSize: 14 }}>ยังไม่มีเอกสารในระบบ</div>
+            <div style={{ marginTop: 4, fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>
+              อัปโหลดเอกสารแรกเพื่อเริ่มต้น
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Show up to 3 most recent files
+  const displayFiles = recentFiles.slice(0, 3)
+  const firstProject = projects.find((p) => p.id === displayFiles[0]?.projectId)
+  const headerLabel = firstProject ? `/ ${firstProject.code} / ${TYPE_LABEL[displayFiles[0].type] || 'ALL'}` : '/ ระบบจัดการเอกสาร'
+
+  // Compute summary text
+  const projCount = new Set(displayFiles.map((f) => f.projectId)).size
+  const latestCount = displayFiles.filter((f) => f.isLatest).length
+  const summaryText =
+    projCount > 1
+      ? `AI: เจอ ${recentFiles.length} ไฟล์ล่าสุดจาก ${projCount} โครงการ`
+      : `AI: เจอ ${recentFiles.length} ไฟล์ — ${latestCount} Version ล่าสุด`
+
   return (
     <div className="hero-preview">
       <div className="hero-preview-head">
@@ -68,33 +110,32 @@ function HeroPreview() {
           <span></span>
           <span></span>
         </div>
-        <div className="label">/ MRT-PP / EIA</div>
+        <div className="label">{headerLabel}</div>
       </div>
       <div className="hero-preview-body">
-        <div className="hp-row featured">
-          <div className="hp-icon dt-eia">EIA</div>
-          <div className="hp-meta">
-            <div className="t">EIA_MRT-PP-เตาปูน_Rev3.pdf</div>
-            <div className="s">2 วันก่อน · 8.2 MB</div>
-          </div>
-          <span className="hp-badge latest">ล่าสุด</span>
-        </div>
-        <div className="hp-row">
-          <div className="hp-icon dt-eia">EIA</div>
-          <div className="hp-meta">
-            <div className="t">EIA_MRT-PP-เตาปูน_Rev2.pdf</div>
-            <div className="s">35 วันก่อน · 7.9 MB</div>
-          </div>
-          <span className="hp-badge old">เก่า</span>
-        </div>
-        <div className="hp-row">
-          <div className="hp-icon dt-eia">EIA</div>
-          <div className="hp-meta">
-            <div className="t">EIA_MRT-PP-เตาปูน_Rev1.pdf</div>
-            <div className="s">92 วันก่อน · 7.8 MB</div>
-          </div>
-          <span className="hp-badge old">เก่า</span>
-        </div>
+        {displayFiles.map((f, idx) => {
+          const project = projectMap[f.projectId]
+          const typeLabel = TYPE_LABEL[f.type] || f.type
+          const typeColor = TYPE_COLOR[f.type] || '#6B7280'
+          const isFeatured = idx === 0 && f.isLatest
+          return (
+            <div key={f.id} className={`hp-row ${isFeatured ? 'featured' : ''}`}>
+              <div className="hp-icon" style={{ background: typeColor }}>
+                {typeLabel.length > 3 ? typeLabel.slice(0, 3) : typeLabel}
+              </div>
+              <div className="hp-meta">
+                <div className="t">{f.name}</div>
+                <div className="s">
+                  {fmtDate(f.date)} · {fmtSize(f.size)}
+                  {project && ` · ${project.code}`}
+                </div>
+              </div>
+              <span className={`hp-badge ${f.isLatest ? 'latest' : 'old'}`}>
+                {f.isLatest ? 'ล่าสุด' : 'เก่า'}
+              </span>
+            </div>
+          )
+        })}
         <div
           style={{
             marginTop: 4,
@@ -110,7 +151,7 @@ function HeroPreview() {
           }}
         >
           <Icon name="sparkles" size={14} />
-          AI: เจอเอกสาร 3 Versions — Rev3 คือล่าสุด
+          {summaryText}
         </div>
       </div>
     </div>

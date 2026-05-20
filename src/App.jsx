@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { supabase, getCurrentUser, fetchProjects } from './api/supabase.js'
+import { supabase, getCurrentUser, fetchProjects, fetchLatestFiles } from './api/supabase.js'
+import { normalizeFile, computeIsLatest } from './utils/format.js'
 import { ToastProvider } from './components/Toast.jsx'
 import Auth from './components/Auth.jsx'
 import Topbar from './components/Topbar.jsx'
@@ -50,17 +51,20 @@ function MainApp({ user }) {
   const [drawerProject, setDrawerProject] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [heroStats, setHeroStats] = useState({ projects: 0, files: 0, types: 0 })
+  const [heroFiles, setHeroFiles] = useState([])
+  const [heroProjects, setHeroProjects] = useState([])
 
   const refresh = () => setRefreshKey((k) => k + 1)
 
   useEffect(() => {
-    loadHeroStats()
+    loadHeroData()
   }, [refreshKey])
 
-  const loadHeroStats = async () => {
+  const loadHeroData = async () => {
     try {
       const projects = await fetchProjects()
-      // Quick aggregate count via single query per project
+      setHeroProjects(projects)
+
       const { count: fileCount } = await supabase.from('files').select('id', { count: 'exact', head: true })
       const { data: typesData } = await supabase.from('files').select('type')
       const typeSet = new Set((typesData || []).map((f) => f.type))
@@ -69,8 +73,33 @@ function MainApp({ user }) {
         files: fileCount || 0,
         types: typeSet.size || 8,
       })
+
+      // Get recent files for preview (latest from each project)
+      const latestRows = await fetchLatestFiles(8)
+      const normalized = (latestRows || []).map(normalizeFile)
+      // Sort by date desc and pick latest distinct per project (max 3)
+      const sorted = [...normalized].sort((a, b) => new Date(b.date) - new Date(a.date))
+      const seen = new Set()
+      const oneFromEach = []
+      for (const f of sorted) {
+        if (!seen.has(f.projectId)) {
+          oneFromEach.push(f)
+          seen.add(f.projectId)
+          if (oneFromEach.length >= 3) break
+        }
+      }
+      // If we have fewer projects, fill with other latest files
+      if (oneFromEach.length < 3) {
+        for (const f of sorted) {
+          if (!oneFromEach.find((x) => x.id === f.id)) {
+            oneFromEach.push(f)
+            if (oneFromEach.length >= 3) break
+          }
+        }
+      }
+      setHeroFiles(oneFromEach)
     } catch (err) {
-      console.error('hero stats:', err)
+      console.error('hero data:', err)
     }
   }
 
@@ -96,6 +125,8 @@ function MainApp({ user }) {
 
       <Hero
         stats={heroStats}
+        recentFiles={heroFiles}
+        projects={heroProjects}
         onUpload={() => setUploadOpen(true)}
         onAsk={() => setChatOpen(true)}
       />
