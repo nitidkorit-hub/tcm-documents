@@ -1,35 +1,63 @@
 import { useState, useRef, useEffect } from 'react'
 import Icon from './Icon.jsx'
 import { useToast } from './Toast.jsx'
-import { fmtDate, TYPE_LABEL, normalizeFile, computeIsLatest } from '../utils/format.js'
+import { fmtDate, fmtSize, TYPE_LABEL, normalizeFile, computeIsLatest } from '../utils/format.js'
 import { fetchProjects, fetchFiles, downloadFile } from '../api/supabase.js'
 
 // Rule-based AI assistant — works without external API
-// Returns { intent, reply, fileName, projectCode, fileId }
+// Returns { intent, reply, fileName, projectCode, fileId, files: [] }
 function processQuery(text, ctx) {
-  const t = text.toLowerCase()
+  const t = text.toLowerCase().trim()
   const { projects, files } = ctx
 
-  // Find project: try code first, then partial name match
+  if (!text) {
+    return { intent: 'answer', reply: 'กรุณาพิมพ์คำถามครับ' }
+  }
+
+  // 1) Greeting / help
+  if (/^(สวัสดี|hello|hi|hey|help|ช่วย)/i.test(t)) {
+    return {
+      intent: 'answer',
+      reply: `สวัสดีครับ ระบบมี ${projects.length} โครงการ ${files.length} ไฟล์\nลองถามได้เช่น:\n• "หา BOQ ล่าสุดของ ABC"\n• "ขอแบบทั้งหมดในโครงการ MRT"\n• "มี MOM กี่ฉบับ"`,
+    }
+  }
+
+  // 2) Find project: try code match (most specific first)
   let matchProject = null
-  for (const p of projects) {
+  const sortedByCodeLen = [...projects].sort((a, b) => (b.code || '').length - (a.code || '').length)
+  for (const p of sortedByCodeLen) {
     const code = (p.code || '').toLowerCase()
-    if (code && (t.includes(code) || code.includes(t.replace(/\s/g, '')))) {
+    if (code && t.includes(code)) {
       matchProject = p
       break
     }
   }
+  // Fuzzy: any 3+ char substring of project code matches
+  if (!matchProject) {
+    for (const p of projects) {
+      const code = (p.code || '').toLowerCase()
+      if (code && code.length >= 3) {
+        const root = code.split('-')[0]
+        if (root.length >= 2 && t.includes(root)) {
+          matchProject = p
+          break
+        }
+      }
+    }
+  }
+  // Match by name (first significant word)
   if (!matchProject) {
     for (const p of projects) {
       const name = (p.name || '').toLowerCase()
-      if (name && name.length > 2 && t.includes(name.slice(0, Math.min(4, name.length)))) {
+      const words = name.split(/\s+/).filter((w) => w.length >= 3)
+      if (words.some((w) => t.includes(w))) {
         matchProject = p
         break
       }
     }
   }
 
-  // Find type
+  // 3) Find type
   let matchType = null
   for (const [key, label] of Object.entries(TYPE_LABEL)) {
     if (t.includes(key) || t.includes(label.toLowerCase())) {
@@ -38,7 +66,10 @@ function processQuery(text, ctx) {
     }
   }
 
-  // Intent: zip
+  // 4) Filename keyword match (e.g., "boq.pdf")
+  const filenameKw = (t.match(/[฀-๿a-z0-9_-]{3,}\.[a-z]{2,5}/i) || [])[0]
+
+  // 5) Intent: ZIP
   if (/zip|รวม|ดาวน์โหลดทั้ง|download all/i.test(text)) {
     if (matchProject) {
       return {
@@ -47,65 +78,87 @@ function processQuery(text, ctx) {
         projectCode: matchProject.code,
       }
     }
-    return {
-      intent: 'answer',
-      reply: 'กรุณาระบุชื่อหรือรหัสโครงการที่ต้องการ Zip ครับ',
-    }
+    return { intent: 'answer', reply: 'กรุณาระบุชื่อหรือรหัสโครงการที่ต้องการ Zip ครับ' }
   }
 
-  // Intent: count
-  if (/กี่|จำนวน|มี.*ไฟล์|how many/i.test(text)) {
-    if (matchType) {
-      const list = matchProject ? files.filter((f) => f.projectId === matchProject.id && f.type === matchType) : files.filter((f) => f.type === matchType)
-      return {
-        intent: 'answer',
-        reply: `มีไฟล์ประเภท "${TYPE_LABEL[matchType]}" ทั้งหมด ${list.length} ฉบับ${matchProject ? ` ในโครงการ ${matchProject.code}` : ''}ครับ`,
-      }
-    }
+  // 6) Intent: COUNT
+  if (/กี่|จำนวน|มี.*ไฟล์|how many|count/i.test(text)) {
+    let list = files
+    let scope = []
     if (matchProject) {
-      const list = files.filter((f) => f.projectId === matchProject.id)
-      return {
-        intent: 'answer',
-        reply: `โครงการ ${matchProject.code} มีไฟล์ทั้งหมด ${list.length} ฉบับครับ`,
-      }
+      list = list.filter((f) => f.projectId === matchProject.id)
+      scope.push(`โครงการ ${matchProject.code}`)
     }
+    if (matchType) {
+      list = list.filter((f) => f.type === matchType)
+      scope.push(`ประเภท "${TYPE_LABEL[matchType]}"`)
+    }
+    const latestCount = list.filter((f) => f.isLatest).length
     return {
       intent: 'answer',
-      reply: `ระบบมีไฟล์ทั้งหมด ${files.length} ฉบับ ใน ${projects.length} โครงการครับ`,
+      reply: `${scope.length ? scope.join(' · ') + ' ' : 'ระบบ'}มีไฟล์ทั้งหมด ${list.length} ฉบับ (Version ล่าสุด ${latestCount} ฉบับ)`,
     }
   }
 
-  // Intent: find/download latest
-  if (/หา|find|ดาวน์โหลด|download|เอา|ขอ/i.test(text) || matchType) {
-    const candidates = files.filter((f) => {
-      if (matchProject && f.projectId !== matchProject.id) return false
-      if (matchType && f.type !== matchType) return false
-      return true
-    })
-    const latests = candidates.filter((f) => f.isLatest)
-    if (latests.length === 0) {
+  // 7) Intent: LIST/FIND
+  // Filter candidates by criteria
+  let candidates = files
+  const scope = []
+  if (matchProject) {
+    candidates = candidates.filter((f) => f.projectId === matchProject.id)
+    scope.push(`โครงการ ${matchProject.code}`)
+  }
+  if (matchType) {
+    candidates = candidates.filter((f) => f.type === matchType)
+    scope.push(`ประเภท "${TYPE_LABEL[matchType]}"`)
+  }
+  if (filenameKw) {
+    candidates = candidates.filter((f) => f.name.toLowerCase().includes(filenameKw.toLowerCase()))
+    scope.push(`ที่มีชื่อ "${filenameKw}"`)
+  }
+
+  // Decide between latest-only or all
+  const wantLatest = /ล่าสุด|latest|new|ใหม่/i.test(text) || (!filenameKw && !/ทั้งหมด|all|every|ทุก/i.test(text))
+  const wantAll = /ทั้งหมด|all|every|ทุก/i.test(text)
+
+  let resultFiles = candidates
+  if (wantLatest && !wantAll) {
+    resultFiles = resultFiles.filter((f) => f.isLatest)
+  }
+
+  // Sort by date desc
+  resultFiles = [...resultFiles].sort((a, b) => new Date(b.date) - new Date(a.date))
+
+  if (resultFiles.length === 0) {
+    if (candidates.length === 0) {
       return {
         intent: 'answer',
-        reply: 'ไม่พบไฟล์ที่ตรงกับเงื่อนไขครับ',
+        reply: scope.length
+          ? `ไม่พบไฟล์${scope.length ? ` (${scope.join(' · ')})` : ''}ครับ`
+          : 'ไม่พบไฟล์ที่ตรงเงื่อนไขครับ ลองระบุชื่อโครงการหรือประเภทเอกสารดูครับ',
       }
     }
-    if (latests.length === 1) {
-      return {
-        intent: 'download_single',
-        reply: `เจอไฟล์: ${latests[0].name} (Version ล่าสุด, ${fmtDate(latests[0].date)})`,
-        fileName: latests[0].name,
-        fileId: latests[0].id,
-      }
-    }
+    // Has candidates but not latest
+    resultFiles = candidates.sort((a, b) => new Date(b.date) - new Date(a.date))
+  }
+
+  if (resultFiles.length === 1) {
+    const f = resultFiles[0]
     return {
-      intent: 'answer',
-      reply: `เจอ ${latests.length} ไฟล์ตรงเงื่อนไข — ลองระบุโครงการหรือประเภทที่ชัดเจนกว่านี้ครับ`,
+      intent: 'list',
+      reply: `เจอไฟล์ ${scope.length ? `(${scope.join(' · ')})` : ''}:`,
+      files: [f],
     }
   }
+
+  const limit = 5
+  const shown = resultFiles.slice(0, limit)
+  const moreText = resultFiles.length > limit ? ` (แสดง ${limit} จาก ${resultFiles.length} ไฟล์)` : ''
 
   return {
-    intent: 'answer',
-    reply: 'ผมสามารถช่วยค้นหาเอกสาร, ดาวน์โหลด, หรือบอกจำนวนไฟล์ในโครงการได้ครับ ลองพิมพ์ "หา EIA ล่าสุดของ MRT-PP" ดู',
+    intent: 'list',
+    reply: `เจอ ${resultFiles.length} ไฟล์${scope.length ? ` (${scope.join(' · ')})` : ''}${moreText}:`,
+    files: shown,
   }
 }
 
@@ -146,7 +199,11 @@ export default function AIChat({ open, onClose }) {
     }
   }
 
-  const suggestions = ['หา EIA ล่าสุดของ MRT-PP', 'รวม Zip โครงการ ABC', 'มี MOM กี่ฉบับ?']
+  const suggestions = [
+    'หาไฟล์ล่าสุดทั้งหมด',
+    'มีกี่โครงการ',
+    'ดูเอกสารทั้งหมดในโครงการ ABC',
+  ]
 
   const send = async (textOverride) => {
     const text = (textOverride ?? input).trim()
@@ -155,8 +212,7 @@ export default function AIChat({ open, onClose }) {
     setMsgs((m) => [...m, { role: 'user', text }])
     setThinking(true)
 
-    // Simulate thinking time
-    await new Promise((r) => setTimeout(r, 600))
+    await new Promise((r) => setTimeout(r, 500))
 
     const result = processQuery(text, ctx)
     setThinking(false)
@@ -169,6 +225,7 @@ export default function AIChat({ open, onClose }) {
         fileName: result.fileName,
         projectCode: result.projectCode,
         fileId: result.fileId,
+        files: result.files || [],
       },
     ])
   }
@@ -196,7 +253,7 @@ export default function AIChat({ open, onClose }) {
         </div>
         <div>
           <div className="ttl">ถามหาเอกสาร</div>
-          <div className="sub">Claude Haiku 4.5 · พร้อมตอบเสมอ</div>
+          <div className="sub">AI Assistant · พร้อมตอบเสมอ</div>
         </div>
         <button className="close" onClick={onClose}>
           <Icon name="close" size={18} />
@@ -207,7 +264,30 @@ export default function AIChat({ open, onClose }) {
         {msgs.map((m, i) => (
           <div className={`msg ${m.role}`} key={i}>
             <div className="bubble">
-              {m.text}
+              <div style={{ whiteSpace: 'pre-line' }}>{m.text}</div>
+              {m.intent === 'list' && m.files && m.files.length > 0 && (
+                <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {m.files.map((f) => (
+                    <div
+                      key={f.id}
+                      className="file-pill"
+                      onClick={() => triggerDownload(f.id, f.name)}
+                      style={{ marginTop: 0 }}
+                    >
+                      <Icon name="download" size={14} style={{ color: 'var(--green)' }} />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div className="nm" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {f.name}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--gray-500)' }}>
+                          {TYPE_LABEL[f.type] || f.type} · {fmtSize(f.size)} · {fmtDate(f.date)}
+                          {f.isLatest && ' · ล่าสุด'}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
               {m.intent === 'download_single' && m.fileId && (
                 <div className="file-pill" onClick={() => triggerDownload(m.fileId, m.fileName)}>
                   <Icon name="download" size={14} style={{ color: 'var(--green)' }} />
