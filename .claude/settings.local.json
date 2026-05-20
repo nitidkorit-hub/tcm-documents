@@ -17,7 +17,10 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git push *)",
-      "Bash(git mv *)"
+      "Bash(git mv *)",
+      "Bash(ls \"C:\\\\Users\\\\Nitro\\\\Downloads\\\\TCM_DocumentAgent.zip\" 2>&1 || echo \"Not found\")",
+      "Bash(mkdir -p \"D:\\\\AI Project\\\\AI Agent Document\\\\_design_v5\")",
+      "Bash(unzip -o \"C:\\\\Users\\\\Nitro\\\\Downloads\\\\TCM_DocumentAgent.zip\")"
     ]
   }
 }

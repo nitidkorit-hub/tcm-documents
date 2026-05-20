@@ -1,181 +1,210 @@
 import { useState, useEffect, useRef } from 'react'
+import Icon from './Icon.jsx'
+import { useToast } from './Toast.jsx'
 import { fetchProjects, uploadFile, logActivity } from '../api/supabase.js'
-
-const DOC_TYPES = [
-  { key: 'auto', label: '🤖 จัดประเภทอัตโนมัติ', color: '#6B7280' },
-  { key: 'eia', label: 'EIA', color: '#2DBE60' },
-  { key: 'drawing', label: 'แบบ', color: '#3A6EA5' },
-  { key: 'contract', label: 'สัญญา', color: '#6E56CF' },
-  { key: 'mom', label: 'MOM', color: '#EC4899' },
-  { key: 'boq', label: 'BOQ', color: '#DC2626' },
-  { key: 'standard', label: 'มาตรฐาน', color: '#0EA5E9' },
-  { key: 'labor', label: 'แรงงาน', color: '#F5A623' },
-  { key: 'other', label: 'อื่นๆ', color: '#6B7280' },
-]
-
-function autoDetectType(filename) {
-  const n = filename.toLowerCase()
-  if (n.includes('eia')) return 'eia'
-  if (n.includes('drawing') || n.includes('dwg') || n.includes('แบบ')) return 'drawing'
-  if (n.includes('contract') || n.includes('สัญญา')) return 'contract'
-  if (n.includes('mom') || n.includes('minute')) return 'mom'
-  if (n.includes('boq') || n.includes('cost')) return 'boq'
-  if (n.includes('standard') || n.includes('spec')) return 'standard'
-  if (n.includes('labor') || n.includes('แรงงาน')) return 'labor'
-  return 'other'
-}
+import { fmtSize, detectType, detectVersion, TYPE_LABEL, TYPE_COLOR, TYPE_KEYS } from '../utils/format.js'
 
 export default function UploadModal({ user, onClose, onUploaded }) {
   const [projects, setProjects] = useState([])
-  const [projectId, setProjectId] = useState('')
-  const [docType, setDocType] = useState('auto')
-  const [files, setFiles] = useState([])
-  const [uploading, setUploading] = useState(false)
-  const [progress, setProgress] = useState(0)
-  const [error, setError] = useState('')
-  const fileInputRef = useRef(null)
+  const [projId, setProjId] = useState('')
+  const [type, setType] = useState('auto')
+  const [items, setItems] = useState([])
+  const [drag, setDrag] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const fileRef = useRef(null)
+  const toast = useToast()
 
   useEffect(() => {
-    fetchProjects().then(data => {
+    fetchProjects().then((data) => {
       setProjects(data)
-      if (data.length > 0) setProjectId(data[0].id)
+      if (data.length > 0) setProjId(data[0].id)
     })
   }, [])
 
-  const handleFileSelect = (e) => {
-    const newFiles = Array.from(e.target.files || [])
-    setFiles(prev => [...prev, ...newFiles])
+  const handleFiles = (fileList) => {
+    const arr = Array.from(fileList).map((f) => ({
+      id: Math.random().toString(36).slice(2),
+      file: f,
+      name: f.name,
+      size: Math.round(f.size / 1024),
+      type: type === 'auto' ? detectType(f.name) : type,
+      version: detectVersion(f.name),
+      progress: 0,
+      done: false,
+    }))
+    setItems((prev) => [...prev, ...arr])
+    // simulate progress animation before real upload
+    arr.forEach((it) => {
+      let p = 0
+      const tk = setInterval(() => {
+        p += Math.random() * 25 + 15
+        if (p >= 95) {
+          p = 95
+          clearInterval(tk)
+        }
+        setItems((prev) => prev.map((x) => (x.id === it.id ? { ...x, progress: p } : x)))
+      }, 220)
+    })
   }
 
-  const handleDrop = (e) => {
+  const onDrop = (e) => {
     e.preventDefault()
-    const newFiles = Array.from(e.dataTransfer.files || [])
-    setFiles(prev => [...prev, ...newFiles])
+    setDrag(false)
+    handleFiles(e.dataTransfer.files)
   }
 
-  const removeFile = (idx) => {
-    setFiles(prev => prev.filter((_, i) => i !== idx))
+  const removeItem = (id) => {
+    setItems((prev) => prev.filter((x) => x.id !== id))
   }
 
-  const handleUpload = async () => {
-    if (!projectId) { setError('กรุณาเลือกโครงการ'); return }
-    if (files.length === 0) { setError('กรุณาเลือกไฟล์'); return }
-
-    setUploading(true)
-    setError('')
-    setProgress(0)
-
-    const uploaderName = user.user_metadata?.full_name || user.email
-    const total = files.length
-    let done = 0
-
-    try {
-      for (const file of files) {
-        const type = docType === 'auto' ? autoDetectType(file.name) : docType
-        await uploadFile(projectId, file, type, uploaderName)
+  const onSubmit = async () => {
+    if (!items.length) {
+      toast('กรุณาเลือกไฟล์ก่อน', 'err')
+      return
+    }
+    if (!projId) {
+      toast('กรุณาเลือกโครงการ', 'err')
+      return
+    }
+    setSubmitting(true)
+    const uploaderName = user?.user_metadata?.full_name || user?.email || 'ผู้ใช้'
+    let ok = 0
+    let fail = 0
+    for (const it of items) {
+      try {
+        await uploadFile(projId, it.file, it.type, uploaderName)
         try {
-          await logActivity(projectId, 'upload', `อัปโหลด ${file.name}`)
-        } catch (e) { /* activity log fail ok */ }
-        done++
-        setProgress(Math.round((done / total) * 100))
+          await logActivity(projId, 'upload', `อัปโหลด ${it.name}`)
+        } catch (_) {}
+        setItems((prev) => prev.map((x) => (x.id === it.id ? { ...x, progress: 100, done: true } : x)))
+        ok++
+      } catch (err) {
+        fail++
+        toast(`อัปโหลด ${it.name} ไม่สำเร็จ: ${err.message}`, 'err')
       }
+    }
+    setSubmitting(false)
+    if (ok > 0) {
+      toast(`อัปโหลด ${ok} ไฟล์สำเร็จ${fail > 0 ? ` (ล้มเหลว ${fail})` : ''}`)
       onUploaded?.()
       onClose()
-    } catch (err) {
-      setError('อัปโหลดไม่สำเร็จ: ' + (err.message || err))
-    } finally {
-      setUploading(false)
     }
   }
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>📤 อัปโหลดเอกสาร</h2>
-          <button onClick={onClose} className="btn-icon">✕</button>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3>อัปโหลดเอกสารใหม่</h3>
+          <button className="icon-btn" onClick={onClose}>
+            <Icon name="close" size={18} />
+          </button>
         </div>
-
         <div className="modal-body">
-          <div className="form-group">
-            <label>โครงการ</label>
-            {projects.length === 0 ? (
-              <div className="alert">ยังไม่มีโครงการ - กรุณาสร้างโครงการก่อน</div>
-            ) : (
-              <select value={projectId} onChange={e => setProjectId(e.target.value)}>
-                {projects.map(p => (
-                  <option key={p.id} value={p.id}>{p.name} ({p.code})</option>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>โครงการ</label>
+              {projects.length === 0 ? (
+                <div className="muted small" style={{ padding: '10px 12px', background: 'var(--gray-100)', borderRadius: 8 }}>
+                  ยังไม่มีโครงการ
+                </div>
+              ) : (
+                <select value={projId} onChange={(e) => setProjId(e.target.value)}>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.code})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>ประเภทเอกสาร</label>
+              <select value={type} onChange={(e) => setType(e.target.value)}>
+                <option value="auto">🤖 จัดประเภทอัตโนมัติ</option>
+                {TYPE_KEYS.map((k) => (
+                  <option key={k} value={k}>
+                    {TYPE_LABEL[k]}
+                  </option>
                 ))}
               </select>
-            )}
-          </div>
-
-          <div className="form-group">
-            <label>ประเภทเอกสาร</label>
-            <div className="type-grid">
-              {DOC_TYPES.map(t => (
-                <button
-                  key={t.key}
-                  type="button"
-                  className={docType === t.key ? 'type-btn active' : 'type-btn'}
-                  style={docType === t.key ? { background: t.color, color: '#fff', borderColor: t.color } : {}}
-                  onClick={() => setDocType(t.key)}
-                >
-                  {t.label}
-                </button>
-              ))}
             </div>
           </div>
 
-          <div className="form-group">
-            <label>ไฟล์</label>
-            <div
-              className="dropzone"
-              onDrop={handleDrop}
-              onDragOver={e => e.preventDefault()}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <div className="dropzone-icon">📁</div>
-              <p>ลากไฟล์มาที่นี่ หรือคลิกเพื่อเลือก</p>
-              <p className="muted small">รองรับ PDF, DOC, XLS, รูปภาพ ฯลฯ</p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                onChange={handleFileSelect}
-                style={{ display: 'none' }}
-              />
-            </div>
-          </div>
+          <div style={{ height: 14 }} />
 
-          {files.length > 0 && (
-            <div className="file-list-small">
-              {files.map((f, i) => (
-                <div key={i} className="file-item-small">
-                  <span>📄 {f.name}</span>
-                  <span className="muted small">{(f.size / 1024).toFixed(0)} KB</span>
-                  <button onClick={() => removeFile(i)} className="btn-icon">✕</button>
+          <label
+            className={`dropzone ${drag ? 'drag' : ''}`}
+            onDragOver={(e) => {
+              e.preventDefault()
+              setDrag(true)
+            }}
+            onDragLeave={() => setDrag(false)}
+            onDrop={onDrop}
+          >
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              style={{ display: 'none' }}
+              onChange={(e) => handleFiles(e.target.files)}
+            />
+            <div className="ic">
+              <Icon name="upload" size={32} />
+            </div>
+            <div className="t">ลากไฟล์มาวางที่นี่ หรือคลิกเลือก</div>
+            <div className="s">รองรับ PDF, Word, Excel, JPG, PNG</div>
+          </label>
+
+          {items.length > 0 && (
+            <div className="upload-list">
+              {items.map((it) => (
+                <div className="upload-item" key={it.id}>
+                  <div
+                    className="file-ico"
+                    style={{ width: 24, height: 24, fontSize: 9, background: TYPE_COLOR[it.type], color: 'white' }}
+                  >
+                    {(TYPE_LABEL[it.type] || it.type).slice(0, 3)}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        fontWeight: 500,
+                        color: 'var(--navy)',
+                        fontSize: 13,
+                      }}
+                    >
+                      {it.name}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>
+                      {TYPE_LABEL[it.type] || it.type} {it.version ? `· ${it.version}` : ''} · {fmtSize(it.size)}
+                    </div>
+                  </div>
+                  <div className="bar" style={{ width: 80 }}>
+                    <div className="fill" style={{ width: `${it.progress}%` }} />
+                  </div>
+                  {it.done ? (
+                    <Icon name="check" size={14} style={{ color: 'var(--green)' }} />
+                  ) : (
+                    <button className="icon-btn" onClick={() => removeItem(it.id)} disabled={submitting}>
+                      <Icon name="close" size={12} />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
           )}
-
-          {uploading && (
-            <div className="progress-bar">
-              <div className="progress-fill" style={{ width: progress + '%' }}></div>
-              <div className="progress-label">{progress}%</div>
-            </div>
-          )}
-
-          {error && <div className="alert">{error}</div>}
         </div>
-
-        <div className="modal-footer">
-          <button onClick={onClose} className="btn-outline" disabled={uploading}>
+        <div className="modal-foot">
+          <button className="btn btn-ghost" onClick={onClose} disabled={submitting}>
             ยกเลิก
           </button>
-          <button onClick={handleUpload} className="btn-primary" disabled={uploading || files.length === 0 || !projectId}>
-            {uploading ? `กำลังอัปโหลด... ${progress}%` : `ยืนยันอัปโหลด (${files.length})`}
+          <button className="btn btn-primary" onClick={onSubmit} disabled={submitting || items.length === 0 || !projId}>
+            <Icon name="check" size={14} />
+            {submitting ? 'กำลังอัปโหลด...' : `ยืนยันอัปโหลด (${items.length})`}
           </button>
         </div>
       </div>

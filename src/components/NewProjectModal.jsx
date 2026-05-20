@@ -1,35 +1,36 @@
 import { useState } from 'react'
+import Icon from './Icon.jsx'
+import { useToast } from './Toast.jsx'
 import { createProject } from '../api/supabase.js'
 
-const COLORS = [
-  '#2DBE60', '#3A6EA5', '#6E56CF', '#F5A623',
-  '#0EA5E9', '#EC4899', '#DC2626', '#1F3A5F'
-]
+const COLORS = ['#2DBE60', '#3A6EA5', '#6E56CF', '#F5A623', '#0EA5E9', '#EC4899', '#DC2626', '#1F3A5F']
+const STATUSES = ['กำลังดำเนินการ', 'อนุมัติแบบ', 'ปิดโครงการ']
 
 export default function NewProjectModal({ onClose, onCreated }) {
   const [name, setName] = useState('')
   const [code, setCode] = useState('')
   const [client, setClient] = useState('')
-  const [color, setColor] = useState(COLORS[0])
+  const [color, setColor] = useState(COLORS[1])
+  const [status, setStatus] = useState(STATUSES[0])
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
+  const toast = useToast()
 
-  const handleSubmit = async (e) => {
+  const onSubmit = async (e) => {
     e.preventDefault()
     setSubmitting(true)
-    setError('')
     try {
       await createProject({
         name,
         code: code.toUpperCase(),
         client,
         color,
-        status: 'active'
+        status,
       })
+      toast('สร้างโครงการเรียบร้อย')
       onCreated?.()
       onClose()
     } catch (err) {
-      setError(err.message || 'สร้างโครงการไม่สำเร็จ')
+      toast('สร้างไม่สำเร็จ: ' + err.message, 'err')
     } finally {
       setSubmitting(false)
     }
@@ -37,64 +38,84 @@ export default function NewProjectModal({ onClose, onCreated }) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>➕ โครงการใหม่</h2>
-          <button onClick={onClose} className="btn-icon">✕</button>
+      <div className="modal" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3>สร้างโครงการใหม่</h3>
+          <button className="icon-btn" onClick={onClose}>
+            <Icon name="close" size={18} />
+          </button>
         </div>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={onSubmit}>
           <div className="modal-body">
-            <div className="form-group">
-              <label>ชื่อโครงการ *</label>
+            <div className="field">
+              <label>ชื่อโครงการ</label>
               <input
                 type="text"
                 value={name}
-                onChange={e => setName(e.target.value)}
-                placeholder="เช่น รถไฟฟ้าสายสีชมพู"
+                onChange={(e) => setName(e.target.value)}
+                placeholder="เช่น รถไฟฟ้าสายสีม่วงใต้..."
                 required
               />
             </div>
-            <div className="form-group">
-              <label>รหัสโครงการ *</label>
-              <input
-                type="text"
-                value={code}
-                onChange={e => setCode(e.target.value)}
-                placeholder="เช่น MRT-PP"
-                required
-              />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="field">
+                <label>รหัสโครงการ</label>
+                <input
+                  type="text"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  placeholder="MRT-PP"
+                  required
+                />
+              </div>
+              <div className="field">
+                <label>เจ้าของงาน</label>
+                <input
+                  type="text"
+                  value={client}
+                  onChange={(e) => setClient(e.target.value)}
+                  placeholder="รฟม."
+                />
+              </div>
             </div>
-            <div className="form-group">
-              <label>เจ้าของงาน</label>
-              <input
-                type="text"
-                value={client}
-                onChange={e => setClient(e.target.value)}
-                placeholder="เช่น รฟม."
-              />
+            <div className="field">
+              <label>สถานะ</label>
+              <select value={status} onChange={(e) => setStatus(e.target.value)}>
+                {STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
             </div>
-            <div className="form-group">
+            <div className="field">
               <label>สีโครงการ</label>
-              <div className="color-picker">
-                {COLORS.map(c => (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {COLORS.map((c) => (
                   <button
-                    key={c}
                     type="button"
-                    className={color === c ? 'color-dot active' : 'color-dot'}
-                    style={{ background: c }}
+                    key={c}
                     onClick={() => setColor(c)}
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 8,
+                      background: c,
+                      cursor: 'pointer',
+                      border: color === c ? '3px solid var(--navy)' : '2px solid transparent',
+                      boxShadow: color === c ? '0 0 0 2px white inset' : 'none',
+                    }}
                   />
                 ))}
               </div>
             </div>
-            {error && <div className="alert">{error}</div>}
           </div>
-          <div className="modal-footer">
-            <button type="button" onClick={onClose} className="btn-outline" disabled={submitting}>
+          <div className="modal-foot">
+            <button type="button" className="btn btn-ghost" onClick={onClose} disabled={submitting}>
               ยกเลิก
             </button>
-            <button type="submit" className="btn-primary" disabled={submitting}>
-              {submitting ? 'กำลังสร้าง...' : 'สร้างโครงการ'}
+            <button type="submit" className="btn btn-primary" disabled={submitting}>
+              <Icon name="check" size={14} /> {submitting ? 'กำลังสร้าง...' : 'สร้างโครงการ'}
             </button>
           </div>
         </form>

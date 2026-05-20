@@ -1,96 +1,110 @@
 import { useState } from 'react'
 import { signUp, signIn } from '../api/supabase.js'
+import Icon from './Icon.jsx'
 
 export default function Auth() {
   const [mode, setMode] = useState('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
-  const [error, setError] = useState('')
+  const [msg, setMsg] = useState(null)
   const [submitting, setSubmitting] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setError('')
+    setMsg(null)
     setSubmitting(true)
     try {
       if (mode === 'signup') {
         await signUp(email, password, fullName)
-        setError('✅ สมัครสำเร็จ! กรุณายืนยัน Email ของคุณ')
+        setMsg({ kind: 'ok', text: 'สมัครสำเร็จ! กรุณายืนยัน Email ที่ส่งให้คุณ' })
       } else {
         await signIn(email, password)
       }
     } catch (err) {
-      setError('❌ ' + (err.message || 'เกิดข้อผิดพลาด'))
+      setMsg({ kind: 'err', text: err.message || 'เกิดข้อผิดพลาด' })
     } finally {
       setSubmitting(false)
     }
   }
 
   return (
-    <div className="auth-screen">
+    <div className="auth-page">
+      <div className="auth-bg-grid" />
       <div className="auth-card">
-        <div className="auth-header">
-          <h1>📋 TCM Document Agent</h1>
-          <p className="muted">ระบบจัดการเอกสารทีม</p>
+        <div className="auth-brand">
+          <div className="brand-mark" style={{ width: 48, height: 48, fontSize: 20 }}>
+            T
+          </div>
+          <div>
+            <h1 style={{ fontSize: 22, margin: 0 }}>TCM Document Agent</h1>
+            <div className="muted small">v5 · Engineering Edition</div>
+          </div>
         </div>
 
         <div className="auth-tabs">
           <button
-            className={mode === 'signin' ? 'tab active' : 'tab'}
-            onClick={() => { setMode('signin'); setError('') }}
+            className={mode === 'signin' ? 'tab on' : 'tab'}
+            onClick={() => {
+              setMode('signin')
+              setMsg(null)
+            }}
+            type="button"
           >
             เข้าสู่ระบบ
           </button>
           <button
-            className={mode === 'signup' ? 'tab active' : 'tab'}
-            onClick={() => { setMode('signup'); setError('') }}
+            className={mode === 'signup' ? 'tab on' : 'tab'}
+            onClick={() => {
+              setMode('signup')
+              setMsg(null)
+            }}
+            type="button"
           >
             สมัครสมาชิก
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="auth-form">
+        <form onSubmit={handleSubmit}>
           {mode === 'signup' && (
-            <div className="form-group">
+            <div className="field">
               <label>ชื่อ-นามสกุล</label>
               <input
                 type="text"
                 value={fullName}
-                onChange={e => setFullName(e.target.value)}
+                onChange={(e) => setFullName(e.target.value)}
                 placeholder="ชื่อของคุณ"
                 required
               />
             </div>
           )}
-
-          <div className="form-group">
+          <div className="field">
             <label>Email</label>
             <input
               type="email"
               value={email}
-              onChange={e => setEmail(e.target.value)}
+              onChange={(e) => setEmail(e.target.value)}
               placeholder="your-email@teamcm.co.th"
               required
             />
           </div>
-
-          <div className="form-group">
+          <div className="field">
             <label>Password</label>
             <input
               type="password"
               value={password}
-              onChange={e => setPassword(e.target.value)}
+              onChange={(e) => setPassword(e.target.value)}
               placeholder="อย่างน้อย 6 ตัว"
               minLength={6}
               required
             />
           </div>
 
-          {error && <div className={error.startsWith('✅') ? 'alert alert-success' : 'alert'}>{error}</div>}
+          {msg && <div className={`auth-msg ${msg.kind}`}>{msg.text}</div>}
 
-          <button type="submit" className="btn-primary" disabled={submitting}>
-            {submitting ? 'กำลังโหลด...' : (mode === 'signin' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก')}
+          <button type="submit" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', marginTop: 6 }} disabled={submitting}>
+            <Icon name={mode === 'signin' ? 'arrow-r' : 'check'} size={15} />
+            {submitting ? 'กำลังโหลด...' : mode === 'signin' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก'}
           </button>
         </form>
       </div>

@@ -1,25 +1,26 @@
 import { useState, useEffect } from 'react'
-import { supabase, getCurrentUser } from './api/supabase.js'
+import { supabase, getCurrentUser, fetchProjects } from './api/supabase.js'
+import { ToastProvider } from './components/Toast.jsx'
 import Auth from './components/Auth.jsx'
-import Header from './components/Header.jsx'
+import Topbar from './components/Topbar.jsx'
+import Hero from './components/Hero.jsx'
 import Dashboard from './components/Dashboard.jsx'
 import ProjectDrawer from './components/ProjectDrawer.jsx'
 import UploadModal from './components/UploadModal.jsx'
 import NewProjectModal from './components/NewProjectModal.jsx'
+import AIChat, { ChatFab } from './components/AIChat.jsx'
 
 export default function App() {
   const [user, setUser] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [drawerProject, setDrawerProject] = useState(null)
-  const [uploadOpen, setUploadOpen] = useState(false)
-  const [newProjectOpen, setNewProjectOpen] = useState(false)
-  const [refreshKey, setRefreshKey] = useState(0)
+  const [authLoading, setAuthLoading] = useState(true)
 
   useEffect(() => {
-    getCurrentUser().then(u => {
-      setUser(u)
-      setLoading(false)
-    }).catch(() => setLoading(false))
+    getCurrentUser()
+      .then((u) => {
+        setUser(u)
+        setAuthLoading(false)
+      })
+      .catch(() => setAuthLoading(false))
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user || null)
@@ -28,34 +29,90 @@ export default function App() {
     return () => authListener.subscription.unsubscribe()
   }, [])
 
-  const refresh = () => setRefreshKey(k => k + 1)
-
-  if (loading) {
+  if (authLoading) {
     return (
-      <div className="center-screen">
+      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
         <div className="spinner"></div>
       </div>
     )
   }
 
-  if (!user) {
-    return <Auth />
+  return (
+    <ToastProvider>{user ? <MainApp user={user} /> : <Auth />}</ToastProvider>
+  )
+}
+
+function MainApp({ user }) {
+  const [active, setActive] = useState('dashboard')
+  const [uploadOpen, setUploadOpen] = useState(false)
+  const [newProjectOpen, setNewProjectOpen] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [drawerProject, setDrawerProject] = useState(null)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [heroStats, setHeroStats] = useState({ projects: 0, files: 0, types: 0 })
+
+  const refresh = () => setRefreshKey((k) => k + 1)
+
+  useEffect(() => {
+    loadHeroStats()
+  }, [refreshKey])
+
+  const loadHeroStats = async () => {
+    try {
+      const projects = await fetchProjects()
+      // Quick aggregate count via single query per project
+      const { count: fileCount } = await supabase.from('files').select('id', { count: 'exact', head: true })
+      const { data: typesData } = await supabase.from('files').select('type')
+      const typeSet = new Set((typesData || []).map((f) => f.type))
+      setHeroStats({
+        projects: projects.length,
+        files: fileCount || 0,
+        types: typeSet.size || 8,
+      })
+    } catch (err) {
+      console.error('hero stats:', err)
+    }
+  }
+
+  const openProjectById = async (projectId) => {
+    try {
+      const projects = await fetchProjects()
+      const found = projects.find((p) => p.id === projectId)
+      if (found) setDrawerProject(found)
+    } catch (err) {
+      console.error('open project:', err)
+    }
   }
 
   return (
-    <div className="app-container">
-      <Header
+    <div className="app">
+      <Topbar
         user={user}
+        active={active}
+        onNav={setActive}
+        onOpenUpload={() => setUploadOpen(true)}
+        onOpenChat={() => setChatOpen(true)}
+      />
+
+      <Hero
+        stats={heroStats}
         onUpload={() => setUploadOpen(true)}
+        onAsk={() => setChatOpen(true)}
+      />
+
+      <Dashboard
+        refreshKey={refreshKey}
+        onOpenProject={openProjectById}
+        onOpenUpload={() => setUploadOpen(true)}
         onNewProject={() => setNewProjectOpen(true)}
       />
 
-      <main className="app-main">
-        <Dashboard
-          refreshKey={refreshKey}
-          onSelectProject={setDrawerProject}
-        />
-      </main>
+      <footer className="footer">
+        TCM Document Agent · v5 Engineering Edition · Powered by Claude Haiku 4.5
+        <div style={{ marginTop: 6, fontSize: 12, color: 'var(--gray-400)' }}>
+          © {new Date().getFullYear()} TCM
+        </div>
+      </footer>
 
       {drawerProject && (
         <ProjectDrawer
@@ -79,6 +136,9 @@ export default function App() {
           onCreated={refresh}
         />
       )}
+
+      {!chatOpen && <ChatFab onClick={() => setChatOpen(true)} />}
+      <AIChat open={chatOpen} onClose={() => setChatOpen(false)} />
     </div>
   )
 }

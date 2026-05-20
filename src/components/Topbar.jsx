@@ -1,0 +1,53 @@
+import Icon from './Icon.jsx'
+import { signOut } from '../api/supabase.js'
+
+export default function Topbar({ user, active, onNav, onOpenUpload, onOpenChat }) {
+  const initials = (() => {
+    const n = user?.user_metadata?.full_name || user?.email || '?'
+    return n.slice(0, 2).toUpperCase()
+  })()
+  const displayName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || ''
+
+  return (
+    <header className="topbar">
+      <div className="topbar-inner">
+        <div className="brand">
+          <div className="brand-mark">T</div>
+          <div className="brand-text">
+            <span className="name">TCM Document Agent</span>
+            <span className="sub">v5 · Engineering Edition</span>
+          </div>
+        </div>
+        <nav className="nav">
+          <button className={active === 'dashboard' ? 'active' : ''} onClick={() => onNav('dashboard')}>
+            <Icon name="layers" size={15} /> ภาพรวม
+          </button>
+          <button className={active === 'projects' ? 'active' : ''} onClick={() => onNav('projects')}>
+            <Icon name="folder" size={15} /> โครงการ
+          </button>
+          <button className={active === 'ai' ? 'active' : ''} onClick={onOpenChat}>
+            <Icon name="sparkles" size={15} /> ถามหาเอกสาร
+          </button>
+        </nav>
+        <button className="btn btn-sm" style={{ background: 'var(--gray-100)', color: 'var(--navy)' }} title="แจ้งเตือน">
+          <Icon name="bell" size={15} />
+        </button>
+        <button className="btn btn-sm btn-navy" onClick={onOpenUpload}>
+          <Icon name="upload" size={15} /> อัปโหลด
+        </button>
+        <div className="user-pill" title={user?.email}>
+          <div className="avatar">{initials}</div>
+          <span className="uname">{displayName}</span>
+        </div>
+        <button
+          className="btn btn-sm"
+          style={{ background: 'var(--gray-100)', color: 'var(--navy)' }}
+          onClick={signOut}
+          title="ออกจากระบบ"
+        >
+          <Icon name="logout" size={15} />
+        </button>
+      </div>
+    </header>
+  )
+}
