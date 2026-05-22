@@ -206,16 +206,33 @@ function matchType(text) {
   return null
 }
 
-// Detect intent
+// Detect intent — order matters! More specific first
 function detectIntent(text) {
-  const t = text.toLowerCase()
-  if (/^(สวัสดี|hello|hi|hey|help|ช่วย|วิธีใช้)/i.test(t)) return 'greeting'
-  if (/(zip|รวม|ดาวน์โหลดทั้ง|download all|ทั้งโครงการ|ทั้งหมดของ)/i.test(t)) return 'zip'
-  if (/^(กี่|จำนวน|how many|count|รวม[^่])/i.test(t) || /(มี.{0,10}(ไฟล์|เอกสาร).{0,10}กี่)/i.test(t)) return 'count'
-  if (/(สถิติ|stat|summary|สรุป)/i.test(t)) return 'stats'
-  if (/(โครงการ.*?(อะไรบ้าง|ไหน|มี))|^มีโครงการ/i.test(t)) return 'list_projects'
-  if (/(ใคร|who|uploader|คนอัพ)/i.test(t)) return 'who'
-  if (/(เมื่อไหร่|เมื่อไร|when|ล่าสุดเมื่อ)/i.test(t)) return 'when'
+  const t = text.toLowerCase().trim()
+
+  // 1. Greeting (exact start match)
+  if (/^(สวัสดี|หวัดดี|hello|hi|hey|help|ช่วย|วิธีใช้|how to use)/i.test(t)) return 'greeting'
+
+  // 2. Count — any occurrence of "กี่" / "จำนวน" / "how many"
+  //    e.g., "MOM กี่ฉบับ", "ในโครงการ ABCD มี MOM กี่ฉบับ", "นับให้หน่อย"
+  if (/(กี่[ฉ่ี]?[บั]?[บ]?|จำนวน|how many|count|มีกี่|นับ)/i.test(t)) return 'count'
+
+  // 3. Stats — explicit summary keywords
+  if (/(สถิติ|stat|summary|สรุป|รายงานรวม|overview|breakdown|รวมทั้งระบบ)/i.test(t)) return 'stats'
+
+  // 4. List projects — must be explicit, not just "โครงการ" + "มี"
+  if (/(มีโครงการอะไรบ้าง|รายชื่อโครงการ|รายการโครงการ|โครงการทั้งหมด|list (all )?projects?|all projects)/i.test(t)) return 'list_projects'
+
+  // 5. ZIP — explicit zip / download all
+  if (/(zip|รวมไฟล์|รวม.*?(โครงการ|ทั้งหมด)|ดาวน์โหลดทั้ง|download all|zip ทั้ง)/i.test(t)) return 'zip'
+
+  // 6. Who uploaded
+  if (/(ใครอัพ|ใครเป็นคน|who uploaded|คนอัพ|ผู้อัพ)/i.test(t)) return 'who'
+
+  // 7. When
+  if (/(เมื่อไหร่|เมื่อไร|when (was|did|is)|ล่าสุดเมื่อ|วันที่.*อัพ)/i.test(t)) return 'when'
+
+  // Default: find/list files
   return 'find'
 }
 
@@ -363,14 +380,50 @@ export function searchFiles(text, ctx) {
     }
   }
 
-  // Count intent
-  if (intent === 'count') {
-    const latest = candidates.filter((f) => f.isLatest).length
-    const scopeText = scope.length ? scope.join(' · ') : 'ระบบ'
+  // Count intent — special case: count of projects (not files)
+  if (intent === 'count' && /โครงการ/.test(text) && !/(ไฟล์|เอกสาร|file|doc|รูป|version)/.test(text)) {
     return {
       intent: 'answer',
-      reply: `${scopeText} มีไฟล์ทั้งหมด **${candidates.length}** ฉบับ (Version ล่าสุด ${latest} ฉบับ)`,
+      reply: `ระบบมี **${projects.length}** โครงการ${projects.length > 0 ? ' ลองพิมพ์ "มีโครงการอะไรบ้าง" เพื่อดูรายการครับ' : ''}`,
     }
+  }
+
+  // Count intent — context-aware
+  if (intent === 'count') {
+    const latest = candidates.filter((f) => f.isLatest).length
+    const scopeLabel = scope.length ? scope.join(' · ') : null
+
+    // No results
+    if (candidates.length === 0) {
+      return {
+        intent: 'answer',
+        reply: scopeLabel
+          ? `ไม่พบไฟล์ใน "${scopeLabel}" ครับ`
+          : 'ระบบยังไม่มีไฟล์เลยครับ',
+      }
+    }
+
+    // Build reply text
+    let reply
+    if (scopeLabel) {
+      reply = `**${scopeLabel}** มี **${candidates.length}** ไฟล์`
+    } else {
+      reply = `ระบบมีไฟล์ทั้งหมด **${candidates.length}** ไฟล์`
+    }
+    if (latest > 0 && latest !== candidates.length) {
+      reply += ` (Version ล่าสุด ${latest} ไฟล์)`
+    }
+
+    // If small set (≤ 5), also show the files
+    if (candidates.length > 0 && candidates.length <= 5) {
+      return {
+        intent: 'list',
+        reply: reply + ':',
+        files: [...candidates].sort((a, b) => new Date(b.date) - new Date(a.date)),
+      }
+    }
+
+    return { intent: 'answer', reply }
   }
 
   // Who uploaded
