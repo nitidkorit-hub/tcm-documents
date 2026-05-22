@@ -109,7 +109,7 @@ export async function fetchLatestFiles(limit = 10) {
   return data || [];
 }
 
-export async function uploadFile(projectId, file, fileType, uploaderName) {
+export async function uploadFile(projectId, file, fileType, uploaderName, contentText = null) {
   const user = await getCurrentUser();
 
   // 1. Upload to storage
@@ -120,27 +120,41 @@ export async function uploadFile(projectId, file, fileType, uploaderName) {
 
   if (storageError) throw storageError;
 
-  // 2. Insert file record
+  // 2. Insert file record (with optional content_text for search)
   const baseName = file.name.replace(/\.\w+$/, '').replace(/_(rev\s*\d+|v\d+|\d{4}-\d{2}-\d{2})$/i, '');
   const ext = file.name.split('.').pop();
 
+  const insertData = {
+    project_id: projectId,
+    name: file.name,
+    type: fileType,
+    base_name: baseName,
+    size: Math.round(file.size / 1024),
+    ext: ext,
+    storage_path: fileName,
+    uploader_id: user.id,
+    uploader_name: uploaderName,
+    is_latest: true
+  };
+  if (contentText) {
+    insertData.content_text = contentText;
+  }
+
   const { data: fileData, error: fileError } = await supabase
     .from('files')
-    .insert([{
-      project_id: projectId,
-      name: file.name,
-      type: fileType,
-      base_name: baseName,
-      size: Math.round(file.size / 1024),
-      ext: ext,
-      storage_path: fileName,
-      uploader_id: user.id,
-      uploader_name: uploaderName,
-      is_latest: true
-    }])
+    .insert([insertData])
     .select();
 
-  if (fileError) throw fileError;
+  if (fileError) {
+    // If content_text column doesn't exist yet, retry without it
+    if (contentText && /content_text/i.test(fileError.message || '')) {
+      delete insertData.content_text;
+      const retry = await supabase.from('files').insert([insertData]).select();
+      if (retry.error) throw retry.error;
+      return retry.data?.[0];
+    }
+    throw fileError;
+  }
 
   // 3. Mark old versions as not latest
   await supabase
@@ -151,6 +165,25 @@ export async function uploadFile(projectId, file, fileType, uploaderName) {
     .neq('id', fileData[0].id);
 
   return fileData?.[0];
+}
+
+// Update content_text for existing file (used for reindexing)
+export async function updateFileContent(fileId, contentText) {
+  const { error } = await supabase
+    .from('files')
+    .update({ content_text: contentText })
+    .eq('id', fileId);
+  if (error && !/content_text/i.test(error.message || '')) throw error;
+  return !error;
+}
+
+// Get file blob from storage (for reindexing)
+export async function getFileBlob(storagePath) {
+  const { data, error } = await supabase.storage
+    .from('documents')
+    .download(storagePath);
+  if (error) throw error;
+  return data;
 }
 
 export async function deleteFile(fileId) {

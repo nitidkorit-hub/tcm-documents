@@ -206,6 +206,24 @@ function matchType(text) {
   return null
 }
 
+// Parse "content contains" query — e.g., "ที่พูดถึง X", "ที่มีคำว่า X", "เนื้อหามี X"
+function parseContentQuery(text) {
+  const patterns = [
+    /(?:พูดถึง|กล่าวถึง|อ้างอิงถึง|mention(?:ed|s)? about|talk(?:s|ing)? about|reference[ds]?)\s+["']?([฀-๿a-zA-Z0-9_\-\s]+?)["']?(?:\s|$|[,.?])/i,
+    /(?:มีคำว่า|มีเนื้อหา.*?ว่า|มีข้อความ|มี keyword|contain[s]?|with keyword|with text)\s+["']?([฀-๿a-zA-Z0-9_\-\s]+?)["']?(?:\s|$|[,.?])/i,
+    /(?:เนื้อหา|content|inside|ในเนื้อหา|เกี่ยวกับ).{0,20}?["']([฀-๿a-zA-Z0-9_\-\s]+?)["']/i,
+    /(?:เกี่ยวกับ|about|regarding|เรื่อง)\s+["']?([฀-๿a-zA-Z0-9_\-]{3,30}?)["']?(?:\s|$|[,.?])/i,
+  ]
+  for (const re of patterns) {
+    const m = text.match(re)
+    if (m && m[1]) {
+      const keyword = m[1].trim().replace(/^["']|["']$/g, '')
+      if (keyword.length >= 2) return { keyword, label: `เนื้อหามี "${keyword}"` }
+    }
+  }
+  return null
+}
+
 // Detect intent — order matters! More specific first
 function detectIntent(text) {
   const t = text.toLowerCase().trim()
@@ -306,6 +324,7 @@ export function searchFiles(text, ctx) {
   const sizeFilter = parseSizeFilter(text)
   const uploaders = Array.from(new Set(files.map((f) => f.uploader).filter(Boolean)))
   const mUploader = parseUploader(text, uploaders)
+  const contentQuery = parseContentQuery(text)
 
   // Filename keyword (e.g., "boq.pdf", "EIA_MRT")
   const filenameKw = (text.match(/[฀-๿a-zA-Z0-9_-]{3,}\.[a-z]{2,5}/i) || [null])[0]
@@ -354,6 +373,34 @@ export function searchFiles(text, ctx) {
   if (filenameKw) {
     candidates = candidates.filter((f) => f.name.toLowerCase().includes(filenameKw.toLowerCase()))
     scope.push(`ชื่อมี "${filenameKw}"`)
+  }
+
+  // Content search — looks inside extracted text
+  let contentMatches = null
+  if (contentQuery) {
+    const kw = contentQuery.keyword.toLowerCase()
+    const matched = []
+    const notIndexed = []
+    for (const f of candidates) {
+      if (!f.contentText) {
+        notIndexed.push(f)
+        continue
+      }
+      const ct = f.contentText.toLowerCase()
+      if (ct.includes(kw)) {
+        // Find snippet
+        const idx = ct.indexOf(kw)
+        const start = Math.max(0, idx - 60)
+        const end = Math.min(f.contentText.length, idx + kw.length + 60)
+        let snippet = f.contentText.slice(start, end)
+        if (start > 0) snippet = '...' + snippet
+        if (end < f.contentText.length) snippet = snippet + '...'
+        matched.push({ file: f, snippet: snippet.replace(/\s+/g, ' ').trim() })
+      }
+    }
+    candidates = matched.map((m) => ({ ...m.file, _snippet: m.snippet }))
+    scope.push(contentQuery.label)
+    contentMatches = { matched, notIndexed }
   }
 
   // Free-text keyword search (additional)
@@ -478,9 +525,14 @@ export function searchFiles(text, ctx) {
 
   if (resultFiles.length === 0) {
     if (candidates.length === 0) {
+      // Special note for content search: if nothing matched and there are non-indexed files
+      let extraNote = ''
+      if (contentMatches && contentMatches.notIndexed.length > 0) {
+        extraNote = `\n\n💡 หมายเหตุ: มี ${contentMatches.notIndexed.length} ไฟล์ที่ยังไม่ได้สกัดข้อความ — ลองเปิดโครงการ → คลิก "Re-index" เพื่อให้ระบบค้นในเนื้อหา`
+      }
       return {
         intent: 'answer',
-        reply: `ไม่พบไฟล์${scope.length ? ` (${scope.join(' · ')})` : ''}ครับ\nลองเปลี่ยนเงื่อนไขหรือพิมพ์ "มีโครงการอะไรบ้าง" เพื่อดูรายการ`,
+        reply: `ไม่พบไฟล์${scope.length ? ` (${scope.join(' · ')})` : ''}ครับ${extraNote}\nลองเปลี่ยนเงื่อนไขหรือพิมพ์ "มีโครงการอะไรบ้าง" เพื่อดูรายการ`,
       }
     }
     // Has candidates but filter removed all (e.g., wantLatest but no latest)

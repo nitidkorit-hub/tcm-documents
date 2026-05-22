@@ -3,6 +3,7 @@ import Icon from './Icon.jsx'
 import { useToast } from './Toast.jsx'
 import { fetchProjects, uploadFile, logActivity } from '../api/supabase.js'
 import { fmtSize, detectType, detectVersion, TYPE_LABEL, TYPE_COLOR, TYPE_KEYS } from '../utils/format.js'
+import { extractText } from '../utils/textExtract.js'
 
 export default function UploadModal({ user, onClose, onUploaded }) {
   const [projects, setProjects] = useState([])
@@ -72,7 +73,20 @@ export default function UploadModal({ user, onClose, onUploaded }) {
     let fail = 0
     for (const it of items) {
       try {
-        await uploadFile(projId, it.file, it.type, uploaderName)
+        // Extract text content for searching (PDF/DOCX/XLSX/TXT)
+        let contentText = null
+        try {
+          setItems((prev) => prev.map((x) => (x.id === it.id ? { ...x, progress: 30 } : x)))
+          contentText = await extractText(it.file, it.name)
+          if (contentText) {
+            console.log(`Extracted ${contentText.length} chars from ${it.name}`)
+          }
+        } catch (e) {
+          console.warn('Text extraction failed:', e)
+        }
+        setItems((prev) => prev.map((x) => (x.id === it.id ? { ...x, progress: 70 } : x)))
+
+        await uploadFile(projId, it.file, it.type, uploaderName, contentText)
         try {
           await logActivity(projId, 'upload', `อัปโหลด ${it.name}`)
         } catch (_) {}

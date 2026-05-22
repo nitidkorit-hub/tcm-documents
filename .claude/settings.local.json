@@ -26,7 +26,9 @@
       "Read(//tmp/**)",
       "Bash(tar -tzf package.tar.gz)",
       "Bash(tar -xzf package.tar.gz)",
-      "Bash(grep -n -E \"fetch\\\\\\(|require\\\\\\(|import |from ['\\\\\"]\\\\\\\\.\" /tmp/design_extract/ai-agent-qto/project/*.js)"
+      "Bash(grep -n -E \"fetch\\\\\\(|require\\\\\\(|import |from ['\\\\\"]\\\\\\\\.\" /tmp/design_extract/ai-agent-qto/project/*.js)",
+      "Bash(npm install *)",
+      "Bash(npm run *)"
     ]
   }
 }

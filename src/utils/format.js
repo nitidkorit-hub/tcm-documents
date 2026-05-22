@@ -105,6 +105,7 @@ export const normalizeFile = (row) => ({
   uploader: row.uploader_name || '',
   isLatest: !!row.is_latest,
   storagePath: row.storage_path,
+  contentText: row.content_text || '',
 })
 
 // Compute isLatest grouping (in-memory)

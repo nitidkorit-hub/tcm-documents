@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import Icon from './Icon.jsx'
 import { useToast } from './Toast.jsx'
-import { fetchFiles, deleteFile, downloadFile, deleteProject } from '../api/supabase.js'
+import { fetchFiles, deleteFile, downloadFile, deleteProject, getFileBlob, updateFileContent } from '../api/supabase.js'
 import { fmtSize, fmtDate, normalizeFile, computeIsLatest, TYPE_LABEL, TYPE_COLOR, TYPE_BG, TYPE_TEXT } from '../utils/format.js'
+import { extractTextFromBlob } from '../utils/textExtract.js'
 
 function FileRow({ file, onDelete, onDownload }) {
   const toast = useToast()
@@ -55,6 +56,8 @@ export default function ProjectDrawer({ project, onClose, onChanged }) {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
   const [showLatestOnly, setShowLatestOnly] = useState(false)
+  const [reindexing, setReindexing] = useState(false)
+  const [reindexProgress, setReindexProgress] = useState({ current: 0, total: 0 })
   const toast = useToast()
 
   useEffect(() => {
@@ -106,6 +109,39 @@ export default function ProjectDrawer({ project, onClose, onChanged }) {
     } catch (err) {
       toast('ลบโครงการไม่สำเร็จ', 'err')
     }
+  }
+
+  const handleReindex = async () => {
+    const needIndex = files.filter((f) => !f.contentText && /\.(pdf|docx?|xlsx?|txt|md)$/i.test(f.name))
+    if (needIndex.length === 0) {
+      toast('ทุกไฟล์ index แล้ว ✅')
+      return
+    }
+    if (!window.confirm(`Re-index เนื้อหา ${needIndex.length} ไฟล์? (อาจใช้เวลาสักครู่)`)) return
+
+    setReindexing(true)
+    setReindexProgress({ current: 0, total: needIndex.length })
+    let ok = 0
+    let fail = 0
+    for (let i = 0; i < needIndex.length; i++) {
+      const f = needIndex[i]
+      setReindexProgress({ current: i + 1, total: needIndex.length })
+      try {
+        const blob = await getFileBlob(f.storagePath)
+        const text = await extractTextFromBlob(blob, f.name)
+        if (text) {
+          await updateFileContent(f.id, text)
+          ok++
+        }
+      } catch (err) {
+        console.error('Reindex error:', f.name, err)
+        fail++
+      }
+    }
+    setReindexing(false)
+    setReindexProgress({ current: 0, total: 0 })
+    toast(`Re-index เสร็จสิ้น: สำเร็จ ${ok} ไฟล์${fail > 0 ? `, ล้มเหลว ${fail}` : ''}`)
+    await load()
   }
 
   if (!project) return null
@@ -179,9 +215,14 @@ export default function ProjectDrawer({ project, onClose, onChanged }) {
                 color: 'white',
                 border: '1px solid rgba(255,255,255,0.2)',
               }}
-              onClick={() => toast('Zip เฉพาะล่าสุด ยังไม่รองรับ', 'err')}
+              onClick={handleReindex}
+              disabled={reindexing}
+              title="สกัดข้อความจากเอกสารเก่า เพื่อให้ AI ค้นในเนื้อหาได้"
             >
-              <Icon name="bolt" size={13} /> Zip เฉพาะล่าสุด
+              <Icon name="sparkles" size={13} />
+              {reindexing
+                ? `กำลัง index... ${reindexProgress.current}/${reindexProgress.total}`
+                : 'Re-index เนื้อหา'}
             </button>
             <button
               className="btn btn-sm"

@@ -167,22 +167,41 @@ export default function AIChat({ open, onClose }) {
                       key={f.id}
                       className="file-pill"
                       onClick={() => triggerDownload(f.id, f.name)}
-                      style={{ marginTop: 0 }}
+                      style={{ marginTop: 0, flexDirection: 'column', alignItems: 'stretch' }}
                     >
-                      <Icon name="download" size={14} style={{ color: 'var(--green)' }} />
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div
-                          className="nm"
-                          style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                        >
-                          {f.name}
-                        </div>
-                        <div style={{ fontSize: 10, color: 'var(--gray-500)' }}>
-                          {TYPE_LABEL[f.type] || f.type} · {fmtSize(f.size)} · {fmtDate(f.date)}
-                          {f.isLatest && ' · ล่าสุด'}
-                          {f.uploader && ` · ${f.uploader}`}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Icon name="download" size={14} style={{ color: 'var(--green)', flexShrink: 0 }} />
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div
+                            className="nm"
+                            style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                          >
+                            {f.name}
+                          </div>
+                          <div style={{ fontSize: 10, color: 'var(--gray-500)' }}>
+                            {TYPE_LABEL[f.type] || f.type} · {fmtSize(f.size)} · {fmtDate(f.date)}
+                            {f.isLatest && ' · ล่าสุด'}
+                            {f.uploader && ` · ${f.uploader}`}
+                          </div>
                         </div>
                       </div>
+                      {f._snippet && (
+                        <div
+                          style={{
+                            marginTop: 6,
+                            padding: '6px 8px',
+                            background: 'rgba(45,190,96,0.08)',
+                            borderLeft: '3px solid var(--green)',
+                            borderRadius: 4,
+                            fontSize: 11,
+                            color: 'var(--gray-700)',
+                            fontStyle: 'italic',
+                            lineHeight: 1.4,
+                          }}
+                        >
+                          📄 {f._snippet}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
