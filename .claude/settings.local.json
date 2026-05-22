@@ -20,7 +20,13 @@
       "Bash(git mv *)",
       "Bash(ls \"C:\\\\Users\\\\Nitro\\\\Downloads\\\\TCM_DocumentAgent.zip\" 2>&1 || echo \"Not found\")",
       "Bash(mkdir -p \"D:\\\\AI Project\\\\AI Agent Document\\\\_design_v5\")",
-      "Bash(unzip -o \"C:\\\\Users\\\\Nitro\\\\Downloads\\\\TCM_DocumentAgent.zip\")"
+      "Bash(unzip -o \"C:\\\\Users\\\\Nitro\\\\Downloads\\\\TCM_DocumentAgent.zip\")",
+      "Bash(mkdir -p /tmp/design_extract)",
+      "Bash(cp 'C:\\\\Users\\\\Nitro\\\\.claude\\\\projects\\\\D--AI-Project-AI-Agent-Document\\\\8a4a2779-85fd-4139-a810-e3747d8c5cdd\\\\tool-results\\\\webfetch-1779424893477-1gvrc6.bin' /tmp/design_extract/package.tar.gz)",
+      "Read(//tmp/**)",
+      "Bash(tar -tzf package.tar.gz)",
+      "Bash(tar -xzf package.tar.gz)",
+      "Bash(grep -n -E \"fetch\\\\\\(|require\\\\\\(|import |from ['\\\\\"]\\\\\\\\.\" /tmp/design_extract/ai-agent-qto/project/*.js)"
     ]
   }
 }

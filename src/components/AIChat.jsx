@@ -3,162 +3,23 @@ import Icon from './Icon.jsx'
 import { useToast } from './Toast.jsx'
 import { fmtDate, fmtSize, TYPE_LABEL, normalizeFile, computeIsLatest } from '../utils/format.js'
 import { fetchProjects, fetchFiles, downloadFile } from '../api/supabase.js'
+import { searchFiles } from '../utils/aiSearch.js'
 
-// Rule-based AI assistant — works without external API
-// Returns { intent, reply, fileName, projectCode, fileId, files: [] }
-function processQuery(text, ctx) {
-  const t = text.toLowerCase().trim()
-  const { projects, files } = ctx
-
-  if (!text) {
-    return { intent: 'answer', reply: 'กรุณาพิมพ์คำถามครับ' }
-  }
-
-  // 1) Greeting / help
-  if (/^(สวัสดี|hello|hi|hey|help|ช่วย)/i.test(t)) {
-    return {
-      intent: 'answer',
-      reply: `สวัสดีครับ ระบบมี ${projects.length} โครงการ ${files.length} ไฟล์\nลองถามได้เช่น:\n• "หา BOQ ล่าสุดของ ABC"\n• "ขอแบบทั้งหมดในโครงการ MRT"\n• "มี MOM กี่ฉบับ"`,
-    }
-  }
-
-  // 2) Find project: try code match (most specific first)
-  let matchProject = null
-  const sortedByCodeLen = [...projects].sort((a, b) => (b.code || '').length - (a.code || '').length)
-  for (const p of sortedByCodeLen) {
-    const code = (p.code || '').toLowerCase()
-    if (code && t.includes(code)) {
-      matchProject = p
-      break
-    }
-  }
-  // Fuzzy: any 3+ char substring of project code matches
-  if (!matchProject) {
-    for (const p of projects) {
-      const code = (p.code || '').toLowerCase()
-      if (code && code.length >= 3) {
-        const root = code.split('-')[0]
-        if (root.length >= 2 && t.includes(root)) {
-          matchProject = p
-          break
-        }
-      }
-    }
-  }
-  // Match by name (first significant word)
-  if (!matchProject) {
-    for (const p of projects) {
-      const name = (p.name || '').toLowerCase()
-      const words = name.split(/\s+/).filter((w) => w.length >= 3)
-      if (words.some((w) => t.includes(w))) {
-        matchProject = p
-        break
-      }
-    }
-  }
-
-  // 3) Find type
-  let matchType = null
-  for (const [key, label] of Object.entries(TYPE_LABEL)) {
-    if (t.includes(key) || t.includes(label.toLowerCase())) {
-      matchType = key
-      break
-    }
-  }
-
-  // 4) Filename keyword match (e.g., "boq.pdf")
-  const filenameKw = (t.match(/[฀-๿a-z0-9_-]{3,}\.[a-z]{2,5}/i) || [])[0]
-
-  // 5) Intent: ZIP
-  if (/zip|รวม|ดาวน์โหลดทั้ง|download all/i.test(text)) {
-    if (matchProject) {
-      return {
-        intent: 'download_zip',
-        reply: `จะรวมไฟล์โครงการ ${matchProject.code} (${matchProject.name}) เป็น Zip ให้ครับ`,
-        projectCode: matchProject.code,
-      }
-    }
-    return { intent: 'answer', reply: 'กรุณาระบุชื่อหรือรหัสโครงการที่ต้องการ Zip ครับ' }
-  }
-
-  // 6) Intent: COUNT
-  if (/กี่|จำนวน|มี.*ไฟล์|how many|count/i.test(text)) {
-    let list = files
-    let scope = []
-    if (matchProject) {
-      list = list.filter((f) => f.projectId === matchProject.id)
-      scope.push(`โครงการ ${matchProject.code}`)
-    }
-    if (matchType) {
-      list = list.filter((f) => f.type === matchType)
-      scope.push(`ประเภท "${TYPE_LABEL[matchType]}"`)
-    }
-    const latestCount = list.filter((f) => f.isLatest).length
-    return {
-      intent: 'answer',
-      reply: `${scope.length ? scope.join(' · ') + ' ' : 'ระบบ'}มีไฟล์ทั้งหมด ${list.length} ฉบับ (Version ล่าสุด ${latestCount} ฉบับ)`,
-    }
-  }
-
-  // 7) Intent: LIST/FIND
-  // Filter candidates by criteria
-  let candidates = files
-  const scope = []
-  if (matchProject) {
-    candidates = candidates.filter((f) => f.projectId === matchProject.id)
-    scope.push(`โครงการ ${matchProject.code}`)
-  }
-  if (matchType) {
-    candidates = candidates.filter((f) => f.type === matchType)
-    scope.push(`ประเภท "${TYPE_LABEL[matchType]}"`)
-  }
-  if (filenameKw) {
-    candidates = candidates.filter((f) => f.name.toLowerCase().includes(filenameKw.toLowerCase()))
-    scope.push(`ที่มีชื่อ "${filenameKw}"`)
-  }
-
-  // Decide between latest-only or all
-  const wantLatest = /ล่าสุด|latest|new|ใหม่/i.test(text) || (!filenameKw && !/ทั้งหมด|all|every|ทุก/i.test(text))
-  const wantAll = /ทั้งหมด|all|every|ทุก/i.test(text)
-
-  let resultFiles = candidates
-  if (wantLatest && !wantAll) {
-    resultFiles = resultFiles.filter((f) => f.isLatest)
-  }
-
-  // Sort by date desc
-  resultFiles = [...resultFiles].sort((a, b) => new Date(b.date) - new Date(a.date))
-
-  if (resultFiles.length === 0) {
-    if (candidates.length === 0) {
-      return {
-        intent: 'answer',
-        reply: scope.length
-          ? `ไม่พบไฟล์${scope.length ? ` (${scope.join(' · ')})` : ''}ครับ`
-          : 'ไม่พบไฟล์ที่ตรงเงื่อนไขครับ ลองระบุชื่อโครงการหรือประเภทเอกสารดูครับ',
-      }
-    }
-    // Has candidates but not latest
-    resultFiles = candidates.sort((a, b) => new Date(b.date) - new Date(a.date))
-  }
-
-  if (resultFiles.length === 1) {
-    const f = resultFiles[0]
-    return {
-      intent: 'list',
-      reply: `เจอไฟล์ ${scope.length ? `(${scope.join(' · ')})` : ''}:`,
-      files: [f],
-    }
-  }
-
-  const limit = 5
-  const shown = resultFiles.slice(0, limit)
-  const moreText = resultFiles.length > limit ? ` (แสดง ${limit} จาก ${resultFiles.length} ไฟล์)` : ''
-
-  return {
-    intent: 'list',
-    reply: `เจอ ${resultFiles.length} ไฟล์${scope.length ? ` (${scope.join(' · ')})` : ''}${moreText}:`,
-    files: shown,
+// Call backend /api/chat for real Claude AI (if configured)
+async function callClaudeAPI(query, ctx) {
+  try {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, context: ctx }),
+    })
+    if (!response.ok) throw new Error('API not OK')
+    const data = await response.json()
+    if (data.reply === '__USE_LOCAL__' || data.fallback) return null
+    return data
+  } catch (err) {
+    console.warn('Claude API not available, using local search:', err.message)
+    return null
   }
 }
 
@@ -166,12 +27,14 @@ export default function AIChat({ open, onClose }) {
   const [msgs, setMsgs] = useState([
     {
       role: 'bot',
-      text: 'สวัสดีครับ ผมเป็น AI Document Agent ผมช่วยค้นหาเอกสาร, ดาวน์โหลดไฟล์, หรือตอบคำถามเกี่ยวกับโครงการของคุณได้ครับ ลองพิมพ์คำสั่งดูเลย',
+      text:
+        'สวัสดีครับ ผมเป็น AI Document Agent ช่วยค้นหาเอกสาร, ดาวน์โหลดไฟล์, หรือตอบคำถามเกี่ยวกับโครงการของคุณได้ครับ\n\nลองถามได้หลากหลายแบบ:\n• "หา EIA ล่าสุดของ MRT-PP"\n• "ไฟล์ที่อัพโหลดเมื่อวาน"\n• "เอกสารใหญ่กว่า 5MB"\n• "มีโครงการอะไรบ้าง"',
     },
   ])
   const [input, setInput] = useState('')
   const [thinking, setThinking] = useState(false)
   const [ctx, setCtx] = useState({ projects: [], files: [] })
+  const [aiMode, setAiMode] = useState('local') // 'local' or 'claude'
   const endRef = useRef(null)
   const toast = useToast()
 
@@ -201,8 +64,9 @@ export default function AIChat({ open, onClose }) {
 
   const suggestions = [
     'หาไฟล์ล่าสุดทั้งหมด',
-    'มีกี่โครงการ',
-    'ดูเอกสารทั้งหมดในโครงการ ABC',
+    'ไฟล์ที่อัพโหลดเมื่อวาน',
+    'มีโครงการอะไรบ้าง',
+    'BOQ ล่าสุดของทุกโครงการ',
   ]
 
   const send = async (textOverride) => {
@@ -212,9 +76,21 @@ export default function AIChat({ open, onClose }) {
     setMsgs((m) => [...m, { role: 'user', text }])
     setThinking(true)
 
-    await new Promise((r) => setTimeout(r, 500))
+    // Try Claude API first (if configured)
+    let result = await callClaudeAPI(text, ctx)
+    let usedAI = 'local'
 
-    const result = processQuery(text, ctx)
+    if (!result) {
+      // Fallback to local rule-based search
+      result = searchFiles(text, ctx)
+    } else {
+      usedAI = 'claude'
+    }
+
+    // Ensure minimum thinking time for natural feel
+    await new Promise((r) => setTimeout(r, 400))
+
+    setAiMode(usedAI)
     setThinking(false)
     setMsgs((m) => [
       ...m,
@@ -226,6 +102,7 @@ export default function AIChat({ open, onClose }) {
         projectCode: result.projectCode,
         fileId: result.fileId,
         files: result.files || [],
+        usedAI,
       },
     ])
   }
@@ -243,6 +120,22 @@ export default function AIChat({ open, onClose }) {
     toast(`Zip โครงการ ${projectCode} ยังไม่รองรับ`, 'err')
   }
 
+  // Render markdown-lite (bold + line breaks)
+  const renderText = (text) => {
+    if (!text) return null
+    const parts = text.split(/(\*\*[^*]+\*\*)/g)
+    return parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return (
+          <strong key={i} style={{ color: 'var(--navy)' }}>
+            {part.slice(2, -2)}
+          </strong>
+        )
+      }
+      return <span key={i}>{part}</span>
+    })
+  }
+
   if (!open) return null
 
   return (
@@ -253,7 +146,9 @@ export default function AIChat({ open, onClose }) {
         </div>
         <div>
           <div className="ttl">ถามหาเอกสาร</div>
-          <div className="sub">AI Assistant · พร้อมตอบเสมอ</div>
+          <div className="sub">
+            {aiMode === 'claude' ? 'Claude Haiku 4.5 · พร้อมตอบเสมอ' : 'Smart Search · พร้อมตอบเสมอ'}
+          </div>
         </div>
         <button className="close" onClick={onClose}>
           <Icon name="close" size={18} />
@@ -264,7 +159,7 @@ export default function AIChat({ open, onClose }) {
         {msgs.map((m, i) => (
           <div className={`msg ${m.role}`} key={i}>
             <div className="bubble">
-              <div style={{ whiteSpace: 'pre-line' }}>{m.text}</div>
+              <div style={{ whiteSpace: 'pre-line' }}>{renderText(m.text)}</div>
               {m.intent === 'list' && m.files && m.files.length > 0 && (
                 <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {m.files.map((f) => (
@@ -276,12 +171,16 @@ export default function AIChat({ open, onClose }) {
                     >
                       <Icon name="download" size={14} style={{ color: 'var(--green)' }} />
                       <div style={{ minWidth: 0, flex: 1 }}>
-                        <div className="nm" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <div
+                          className="nm"
+                          style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                        >
                           {f.name}
                         </div>
                         <div style={{ fontSize: 10, color: 'var(--gray-500)' }}>
                           {TYPE_LABEL[f.type] || f.type} · {fmtSize(f.size)} · {fmtDate(f.date)}
                           {f.isLatest && ' · ล่าสุด'}
+                          {f.uploader && ` · ${f.uploader}`}
                         </div>
                       </div>
                     </div>
@@ -301,6 +200,19 @@ export default function AIChat({ open, onClose }) {
                 </div>
               )}
             </div>
+            {m.role === 'bot' && m.usedAI === 'claude' && (
+              <div
+                style={{
+                  fontSize: 9,
+                  color: 'var(--gray-400)',
+                  marginTop: 4,
+                  marginLeft: 4,
+                  letterSpacing: '0.04em',
+                }}
+              >
+                ⚡ Claude AI
+              </div>
+            )}
           </div>
         ))}
         {thinking && (

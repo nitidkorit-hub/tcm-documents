@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <title>TCM ConstructAI QTO Agent v2.0</title>
+  <meta name="viewport" content="width=1440" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&family=Sarabun:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ============ SETUP SCREEN ============ -->
+  <div id="setup">
+    <div class="setup-card">
+      <div class="setup-logo">
+        <div class="mark">TCM</div>
+        <h1>ConstructAI QTO<small>AI Agent ถอดปริมาณงานก่อสร้าง · v2.0</small></h1>
+      </div>
+
+      <h2>เริ่มต้นใช้งาน</h2>
+      <p class="lead">กรอก Anthropic API Key เพื่อให้ AI สามารถอ่านแบบและสร้าง BOQ ได้ — Key จะถูกเก็บไว้ใน Browser ของคุณเท่านั้น</p>
+
+      <div class="input-row">
+        <label for="key-input">Anthropic API Key</label>
+        <input id="key-input" type="password" placeholder="sk-ant-api03-..." autocomplete="off" />
+        <div class="help">รับ API Key ได้ที่ <a href="https://console.anthropic.com/" target="_blank">console.anthropic.com</a></div>
+      </div>
+
+      <div class="setup-actions">
+        <button class="btn btn-accent btn-block btn-lg" onclick="saveKey()">เริ่มใช้งาน</button>
+      </div>
+      <div style="text-align:center; margin-top:10px;">
+        <button class="btn btn-ghost btn-sm" onclick="skipKey()" style="background:transparent; border:none;">→ ข้ามและใช้ Demo Mode (ไม่ต้องใช้ API)</button>
+      </div>
+
+      <div class="setup-foot">
+        <span><strong>🔒 ความปลอดภัย:</strong> Key จะถูกเก็บใน localStorage บนเครื่องคุณเท่านั้น ไม่ถูกส่งไปยังเซิร์ฟเวอร์อื่น</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MAIN APP ============ -->
+  <div id="app">
+
+    <!-- HEADER -->
+    <header class="hdr">
+      <div class="logo">
+        <div class="mark">TCM</div>
+        <div class="title">
+          <b>ConstructAI QTO</b>
+          <small>AI Agent · v2.0</small>
+        </div>
+      </div>
+
+      <div class="badges">
+        <div class="badge" id="bdg-files">📂 ไฟล์ <b>0</b></div>
+        <div class="badge" id="bdg-disc">🏷️ หมวด <b>0</b></div>
+        <div class="badge on" id="bdg-boq">📊 รายการ <b>0</b></div>
+      </div>
+
+      <div class="spacer"></div>
+
+      <div class="key-pill">
+        <span class="dot"></span>
+        <span id="key-pill-text">No key</span>
+        <button onclick="clearKey()">เปลี่ยน</button>
+      </div>
+      <button class="icon-btn" id="theme-btn" onclick="toggleTheme()" title="Toggle Dark Mode"></button>
+    </header>
+
+    <!-- TABS -->
+    <nav class="tabs">
+      <button class="tab" data-tab="upload" onclick="go('upload')">
+        <span class="ic"></span> Upload
+      </button>
+      <button class="tab" data-tab="verify" onclick="go('verify')">
+        <span class="ic"></span> Verify
+      </button>
+      <button class="tab on" data-tab="takeoff" onclick="go('takeoff')">
+        <span class="ic"></span> Takeoff <span class="ct">★</span>
+      </button>
+      <button class="tab" data-tab="compare" onclick="go('compare')">
+        <span class="ic"></span> Compare <span class="ct">★</span>
+      </button>
+      <button class="tab" data-tab="legal" onclick="go('legal')">
+        <span class="ic"></span> Legal
+      </button>
+      <button class="tab" data-tab="qa" onclick="go('qa')">
+        <span class="ic"></span> QA Chat
+      </button>
+      <button class="tab" data-tab="export" onclick="go('export')">
+        <span class="ic"></span> Export
+      </button>
+    </nav>
+
+    <!-- BODY -->
+    <main id="content"></main>
+  </div>
+
+  <!-- ============ TOAST + LOADING ============ -->
+  <div id="toast"></div>
+  <div id="ld">
+    <div class="card">
+      <div class="spin"></div>
+      <div class="t">กำลังประมวลผล...</div>
+      <div class="sub">AI กำลังวิเคราะห์</div>
+    </div>
+  </div>
+
+  <!-- ============ SHEETJS for Excel ============ -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <!-- ============ APP SCRIPTS ============ -->
+  <script src="data.js"></script>
+  <script src="symbols.js"></script>
+  <script src="core.js"></script>
+  <script src="tabs-main.js"></script>
+  <script src="tabs-other.js"></script>
+  <script src="app.js"></script>
+
+  <!-- Inject tab icons after scripts load -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const tabIcons = { upload:ICN.upload, verify:ICN.verify, takeoff:ICN.takeoff, measure:ICN.measure, compare:ICN.compare, legal:ICN.legal, qa:ICN.qa, export:ICN.export };
+      document.querySelectorAll('.tab').forEach(t => {
+        const ic = t.querySelector('.ic');
+        if (ic) ic.innerHTML = tabIcons[t.dataset.tab] || '';
+      });
+    });
+  </script>
+</body>
+</html>
