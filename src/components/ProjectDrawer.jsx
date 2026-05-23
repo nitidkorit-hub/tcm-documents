@@ -3,7 +3,7 @@ import Icon from './Icon.jsx'
 import { useToast } from './Toast.jsx'
 import { fetchFiles, deleteFile, downloadFile, deleteProject, getFileBlob, updateFileContent } from '../api/supabase.js'
 import { fmtSize, fmtDate, normalizeFile, computeIsLatest, TYPE_LABEL, TYPE_COLOR, TYPE_BG, TYPE_TEXT } from '../utils/format.js'
-import { extractTextFromBlob } from '../utils/textExtract.js'
+import { extractTextFromBlobDetailed, RESULT } from '../utils/textExtract.js'
 
 function FileRow({ file, onDelete, onDownload }) {
   const toast = useToast()
@@ -58,6 +58,7 @@ export default function ProjectDrawer({ project, onClose, onChanged }) {
   const [showLatestOnly, setShowLatestOnly] = useState(false)
   const [reindexing, setReindexing] = useState(false)
   const [reindexProgress, setReindexProgress] = useState({ current: 0, total: 0 })
+  const [reindexReport, setReindexReport] = useState(null) // { ok, failed: [{name, reason}], empty: [{name, reason}] }
   const toast = useToast()
 
   useEffect(() => {
@@ -112,7 +113,7 @@ export default function ProjectDrawer({ project, onClose, onChanged }) {
   }
 
   const handleReindex = async () => {
-    const needIndex = files.filter((f) => !f.contentText && /\.(pdf|docx?|xlsx?|txt|md)$/i.test(f.name))
+    const needIndex = files.filter((f) => !f.contentText && /\.(pdf|docx?|xlsx?|txt|md|csv|json)$/i.test(f.name))
     if (needIndex.length === 0) {
       toast('ทุกไฟล์ index แล้ว ✅')
       return
@@ -120,27 +121,47 @@ export default function ProjectDrawer({ project, onClose, onChanged }) {
     if (!window.confirm(`Re-index เนื้อหา ${needIndex.length} ไฟล์? (อาจใช้เวลาสักครู่)`)) return
 
     setReindexing(true)
+    setReindexReport(null)
     setReindexProgress({ current: 0, total: needIndex.length })
-    let ok = 0
-    let fail = 0
+    const okList = []
+    const failList = []
+    const emptyList = []
+
     for (let i = 0; i < needIndex.length; i++) {
       const f = needIndex[i]
       setReindexProgress({ current: i + 1, total: needIndex.length })
       try {
         const blob = await getFileBlob(f.storagePath)
-        const text = await extractTextFromBlob(blob, f.name)
-        if (text) {
-          await updateFileContent(f.id, text)
-          ok++
+        const result = await extractTextFromBlobDetailed(blob, f.name)
+
+        if (result.status === RESULT.SUCCESS) {
+          const updated = await updateFileContent(f.id, result.text)
+          if (updated) {
+            okList.push({ name: f.name })
+          } else {
+            failList.push({ name: f.name, reason: 'บันทึกลง DB ไม่ได้ (ตรวจสอบว่า run migration แล้ว)' })
+          }
+        } else if (result.status === RESULT.EMPTY) {
+          emptyList.push({ name: f.name, reason: result.error || 'ไม่มีข้อความให้สกัด' })
+        } else {
+          failList.push({ name: f.name, reason: result.error || 'ไม่ทราบสาเหตุ' })
         }
       } catch (err) {
         console.error('Reindex error:', f.name, err)
-        fail++
+        failList.push({ name: f.name, reason: err?.message || 'ดาวน์โหลดไฟล์ไม่สำเร็จ' })
       }
     }
+
     setReindexing(false)
     setReindexProgress({ current: 0, total: 0 })
-    toast(`Re-index เสร็จสิ้น: สำเร็จ ${ok} ไฟล์${fail > 0 ? `, ล้มเหลว ${fail}` : ''}`)
+    setReindexReport({ ok: okList, failed: failList, empty: emptyList })
+
+    const total = okList.length + failList.length + emptyList.length
+    toast(
+      `Re-index เสร็จสิ้น: ${okList.length}/${total} สำเร็จ${
+        emptyList.length ? ` · ${emptyList.length} ไม่มีข้อความ` : ''
+      }${failList.length ? ` · ${failList.length} ผิดพลาด` : ''}`
+    )
     await load()
   }
 
@@ -309,6 +330,95 @@ export default function ProjectDrawer({ project, onClose, onChanged }) {
           )}
         </div>
       </div>
+
+      {reindexReport && (
+        <ReindexReportModal report={reindexReport} onClose={() => setReindexReport(null)} />
+      )}
     </>
+  )
+}
+
+function ReindexReportModal({ report, onClose }) {
+  const { ok = [], failed = [], empty = [] } = report
+  return (
+    <div className="modal-backdrop" onClick={onClose} style={{ zIndex: 250 }}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3>📊 Re-index Report</h3>
+          <button className="icon-btn" onClick={onClose}>
+            <Icon name="close" size={18} />
+          </button>
+        </div>
+        <div className="modal-body">
+          <div style={{ display: 'flex', gap: 12, marginBottom: 18 }}>
+            <div style={{ flex: 1, padding: 12, background: 'var(--green-50)', borderRadius: 8 }}>
+              <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>สำเร็จ</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#1F8E48' }}>{ok.length}</div>
+            </div>
+            <div style={{ flex: 1, padding: 12, background: '#FFF7E6', borderRadius: 8 }}>
+              <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>ไม่มีข้อความ</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#C77F00' }}>{empty.length}</div>
+            </div>
+            <div style={{ flex: 1, padding: 12, background: '#FFF5F5', borderRadius: 8 }}>
+              <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>ผิดพลาด</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#DC2626' }}>{failed.length}</div>
+            </div>
+          </div>
+
+          {empty.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy)', marginBottom: 8 }}>
+                ⚠️ ไฟล์ที่ไม่มีข้อความ ({empty.length})
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--gray-500)', marginBottom: 6 }}>
+                ส่วนใหญ่เป็น PDF สแกน (ภาพ) - ระบบไม่สามารถอ่านข้อความได้
+              </div>
+              <div style={{ maxHeight: 150, overflowY: 'auto', background: '#FFFBEB', borderRadius: 8, padding: 8 }}>
+                {empty.map((item, i) => (
+                  <div key={i} style={{ fontSize: 12, marginBottom: 4 }}>
+                    📄 <strong>{item.name}</strong>
+                    <div style={{ fontSize: 10, color: 'var(--gray-500)', marginLeft: 16 }}>
+                      {item.reason}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {failed.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--red)', marginBottom: 8 }}>
+                ❌ ไฟล์ที่ผิดพลาด ({failed.length})
+              </div>
+              <div style={{ maxHeight: 200, overflowY: 'auto', background: '#FFF5F5', borderRadius: 8, padding: 8 }}>
+                {failed.map((item, i) => (
+                  <div key={i} style={{ fontSize: 12, marginBottom: 6 }}>
+                    📄 <strong>{item.name}</strong>
+                    <div style={{ fontSize: 10, color: 'var(--red)', marginLeft: 16 }}>
+                      สาเหตุ: {item.reason}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{ marginTop: 12, padding: 10, background: 'var(--steel-50)', borderRadius: 8, fontSize: 12 }}>
+            <strong>💡 คำแนะนำ:</strong>
+            <ul style={{ margin: '6px 0 0 18px', padding: 0 }}>
+              <li>PDF สแกน (ภาพ) → ต้องแปลงเป็น PDF text-based ก่อน (ใช้ Adobe Acrobat OCR)</li>
+              <li>ไฟล์ผิดพลาด → ลอง Upload ใหม่ หรือลองในไฟล์ขนาดเล็กกว่า</li>
+              <li>ระบบยังค้นหาด้วยชื่อไฟล์ + ประเภท + วันที่ ได้ปกติ</li>
+            </ul>
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button className="btn btn-primary" onClick={onClose}>
+            <Icon name="check" size={14} /> รับทราบ
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
