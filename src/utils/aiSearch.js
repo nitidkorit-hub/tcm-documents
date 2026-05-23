@@ -206,19 +206,35 @@ function matchType(text) {
   return null
 }
 
-// Parse "content contains" query — e.g., "ที่พูดถึง X", "ที่มีคำว่า X", "เนื้อหามี X"
+// Parse "content contains" query — works with Thai (no-space) and English
+// Returns { keyword, label } or null
 function parseContentQuery(text) {
+  // Words after these verbs/markers = content keyword
+  // STOP words: ของ, ใน, จาก, สำหรับ, ที่อยู่, in project, of project
+  // Note: \s* allows optional space (Thai often has no spaces between words)
   const patterns = [
-    /(?:พูดถึง|กล่าวถึง|อ้างอิงถึง|mention(?:ed|s)? about|talk(?:s|ing)? about|reference[ds]?)\s+["']?([฀-๿a-zA-Z0-9_\-\s]+?)["']?(?:\s|$|[,.?])/i,
-    /(?:มีคำว่า|มีเนื้อหา.*?ว่า|มีข้อความ|มี keyword|contain[s]?|with keyword|with text)\s+["']?([฀-๿a-zA-Z0-9_\-\s]+?)["']?(?:\s|$|[,.?])/i,
-    /(?:เนื้อหา|content|inside|ในเนื้อหา|เกี่ยวกับ).{0,20}?["']([฀-๿a-zA-Z0-9_\-\s]+?)["']/i,
-    /(?:เกี่ยวกับ|about|regarding|เรื่อง)\s+["']?([฀-๿a-zA-Z0-9_\-]{3,30}?)["']?(?:\s|$|[,.?])/i,
+    // "พูดถึง[เรื่อง] X" / "กล่าวถึง[เรื่อง] X" / "อ้างถึง X"
+    /(?:พูดถึง|กล่าวถึง|อ้างอิงถึง|อ้างถึง|พูดเรื่อง|กล่าวเรื่อง|ระบุถึง|กล่าวว่า|พูดว่า)\s*(?:เรื่อง\s*)?(.+?)(?:\s*(?:ของโครงการ|ในโครงการ|ของ\s|ใน\s|จาก\s|สำหรับ\s|ที่อยู่|in project|of project)|$|[,.?!\n])/i,
+    // English "mention X" / "talk about X" / "discuss X"
+    /(?:mention(?:ed|s|ing)?|talk(?:s|ing|ed)?\s+about|discuss(?:es|ed|ing)?|reference[ds]?)\s+(.+?)(?:\s+(?:of|in|from|for)\s+|$|[,.?!\n])/i,
+    // "มีคำว่า X" / "มีข้อความ X"
+    /(?:มีคำว่า|มีข้อความ|มีเนื้อหา.*?ว่า|มี keyword|contains?|with keyword|with text)\s*["']?(.+?)["']?(?:\s*(?:ของโครงการ|ในโครงการ|ของ\s|ใน\s)|$|[,.?!\n])/i,
+    // "เกี่ยวกับ X" — must not match "เกี่ยวกับโครงการ"
+    /(?:เกี่ยวกับ|เรื่อง(?!ของ))\s*(.+?)(?:\s*(?:ของโครงการ|ในโครงการ|ของ\s|ใน\s|จาก\s)|$|[,.?!\n])/i,
   ]
+
   for (const re of patterns) {
     const m = text.match(re)
     if (m && m[1]) {
-      const keyword = m[1].trim().replace(/^["']|["']$/g, '')
-      if (keyword.length >= 2) return { keyword, label: `เนื้อหามี "${keyword}"` }
+      let keyword = m[1].trim().replace(/^["']|["']$/g, '').trim()
+      // Strip leading noise words
+      keyword = keyword.replace(/^(?:เรื่อง|การ)\s*/, '').trim()
+      // Strip trailing project codes (so "F1 ของโครงการ ABCD" → "F1")
+      keyword = keyword.replace(/\s+(?:โครงการ|project)\s*[a-zA-Z0-9_-]+\s*$/i, '').trim()
+      // Validate
+      if (keyword.length >= 2 && keyword.length <= 100) {
+        return { keyword, label: `เนื้อหามี "${keyword}"` }
+      }
     }
   }
   return null
@@ -376,9 +392,13 @@ export function searchFiles(text, ctx) {
   }
 
   // Content search — looks inside extracted text
+  // Supports exact phrase + individual word fallback
   let contentMatches = null
   if (contentQuery) {
     const kw = contentQuery.keyword.toLowerCase()
+    // Significant words (len >= 2) for fallback matching
+    const words = kw.split(/[\s,]+/).filter((w) => w.length >= 2)
+
     const matched = []
     const notIndexed = []
     for (const f of candidates) {
@@ -387,11 +407,28 @@ export function searchFiles(text, ctx) {
         continue
       }
       const ct = f.contentText.toLowerCase()
+
+      let matchedKw = null
+      let matchedIdx = -1
+
+      // Pass 1: Exact phrase
       if (ct.includes(kw)) {
-        // Find snippet
-        const idx = ct.indexOf(kw)
-        const start = Math.max(0, idx - 60)
-        const end = Math.min(f.contentText.length, idx + kw.length + 60)
+        matchedKw = kw
+        matchedIdx = ct.indexOf(kw)
+      } else if (words.length > 1) {
+        // Pass 2: ALL significant words must appear (AND match, anywhere in doc)
+        const allFound = words.every((w) => ct.includes(w))
+        if (allFound) {
+          // Pick first occurrence for snippet
+          matchedKw = words[0]
+          matchedIdx = ct.indexOf(words[0])
+        }
+      }
+
+      if (matchedKw !== null && matchedIdx >= 0) {
+        const len = matchedKw.length
+        const start = Math.max(0, matchedIdx - 60)
+        const end = Math.min(f.contentText.length, matchedIdx + len + 60)
         let snippet = f.contentText.slice(start, end)
         if (start > 0) snippet = '...' + snippet
         if (end < f.contentText.length) snippet = snippet + '...'
