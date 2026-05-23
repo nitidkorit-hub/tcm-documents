@@ -86,14 +86,12 @@ async function extractFromPDF(file) {
     await pdf.destroy()
   } catch (_) {}
 
-  if (extractedPages === 0 && numPages > 0) {
-    throw new Error(`อ่านได้ 0 หน้าจาก ${numPages} หน้า — PDF อาจเป็นภาพสแกนหรือใช้ font พิเศษ`)
-  }
-
+  // If 0 pages extracted, return empty string (caller will mark as EMPTY, not ERROR)
+  // This handles scanned PDFs gracefully
   return fullText.slice(0, MAX_TEXT_LENGTH).trim()
 }
 
-// Extract from DOCX with format validation
+// Extract from DOCX with format validation + plain text fallback
 async function extractFromDOCX(file) {
   const arrayBuffer = await file.arrayBuffer()
 
@@ -101,33 +99,61 @@ async function extractFromDOCX(file) {
     throw new Error('ไฟล์ว่างเปล่า (0 bytes)')
   }
 
-  // Validate ZIP signature (DOCX = ZIP container)
   const sig = new Uint8Array(arrayBuffer, 0, 4)
-  const isZip = sig[0] === 0x50 && sig[1] === 0x4b // "PK"
 
-  if (!isZip) {
-    // Check if it's old .doc (OLE compound document)
-    if (sig[0] === 0xd0 && sig[1] === 0xcf && sig[2] === 0x11 && sig[3] === 0xe0) {
-      throw new Error('ไฟล์เป็น .doc รูปแบบเก่า (Word 97-2003) — กรุณาเปิดด้วย Word แล้ว "Save As" เป็น .docx แล้ว Upload ใหม่')
+  // Valid DOCX (ZIP container starting with "PK")
+  if (sig[0] === 0x50 && sig[1] === 0x4b) {
+    const mammoth = await import('mammoth')
+    const result = await mammoth.extractRawText({ arrayBuffer })
+    const text = (result.value || '').trim()
+    if (result.messages && result.messages.length > 0) {
+      console.log('Mammoth warnings:', result.messages)
     }
-    // Check if it's RTF
-    const text = new TextDecoder().decode(new Uint8Array(arrayBuffer, 0, Math.min(10, arrayBuffer.byteLength)))
-    if (text.startsWith('{\\rtf')) {
-      throw new Error('ไฟล์เป็น RTF ไม่ใช่ .docx — กรุณา Save As เป็น .docx')
-    }
-    throw new Error(`ไฟล์ไม่ใช่ .docx มาตรฐาน (signature: ${Array.from(sig).map((b) => b.toString(16).padStart(2, '0')).join(' ')})`)
+    return text.slice(0, MAX_TEXT_LENGTH)
   }
 
-  const mammoth = await import('mammoth')
-  const result = await mammoth.extractRawText({ arrayBuffer })
-  const text = (result.value || '').trim()
-
-  // Log mammoth warnings if any
-  if (result.messages && result.messages.length > 0) {
-    console.log('Mammoth warnings for', file.name, ':', result.messages)
+  // Old .doc (OLE compound document)
+  if (sig[0] === 0xd0 && sig[1] === 0xcf && sig[2] === 0x11 && sig[3] === 0xe0) {
+    throw new Error('ไฟล์เป็น .doc รูปแบบเก่า (Word 97-2003) — กรุณาเปิดด้วย Word แล้ว "Save As" เป็น .docx แล้ว Upload ใหม่')
   }
 
-  return text.slice(0, MAX_TEXT_LENGTH)
+  // UTF-8 BOM (EF BB BF) → file is actually plain text saved with .docx extension
+  if (sig[0] === 0xef && sig[1] === 0xbb && sig[2] === 0xbf) {
+    console.log('File has UTF-8 BOM, extracting as plain text:', file.name)
+    const decoder = new TextDecoder('utf-8')
+    const text = decoder.decode(arrayBuffer).replace(/^﻿/, '').trim()
+    return text.slice(0, MAX_TEXT_LENGTH)
+  }
+
+  // UTF-16 LE BOM (FF FE) or UTF-16 BE BOM (FE FF)
+  if ((sig[0] === 0xff && sig[1] === 0xfe) || (sig[0] === 0xfe && sig[1] === 0xff)) {
+    console.log('File has UTF-16 BOM, extracting as text:', file.name)
+    const enc = sig[0] === 0xff ? 'utf-16le' : 'utf-16be'
+    const decoder = new TextDecoder(enc)
+    const text = decoder.decode(arrayBuffer).replace(/^﻿/, '').trim()
+    return text.slice(0, MAX_TEXT_LENGTH)
+  }
+
+  // RTF
+  const head = new TextDecoder().decode(new Uint8Array(arrayBuffer, 0, Math.min(10, arrayBuffer.byteLength)))
+  if (head.startsWith('{\\rtf')) {
+    throw new Error('ไฟล์เป็น RTF — กรุณา Save As เป็น .docx ใน Word')
+  }
+
+  // Last resort: try reading as plain text (ASCII / Latin1)
+  // Many files with .docx extension might actually be text files
+  try {
+    const decoder = new TextDecoder('utf-8', { fatal: false })
+    const text = decoder.decode(arrayBuffer).trim()
+    // Check if it looks like reasonable text (printable chars > 80%)
+    const printable = text.match(/[\x20-\x7E฀-๿ -￿\n\r\t]/g) || []
+    if (text.length > 0 && printable.length / text.length > 0.85) {
+      console.log('Extracted as plain text:', file.name)
+      return text.slice(0, MAX_TEXT_LENGTH)
+    }
+  } catch (_) {}
+
+  throw new Error(`ไฟล์ไม่ใช่ .docx มาตรฐาน (signature: ${Array.from(sig).map((b) => b.toString(16).padStart(2, '0')).join(' ')}) — อาจเป็น binary format ที่ไม่รองรับ`)
 }
 
 // Extract from XLSX with format validation
