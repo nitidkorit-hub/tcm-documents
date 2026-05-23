@@ -4,17 +4,17 @@ import { useToast } from './Toast.jsx'
 import { fetchFiles, deleteFile, downloadFile, deleteProject, getFileBlob, updateFileContent } from '../api/supabase.js'
 import { fmtSize, fmtDate, normalizeFile, computeIsLatest, TYPE_LABEL, TYPE_COLOR, TYPE_BG, TYPE_TEXT } from '../utils/format.js'
 import { extractTextFromBlobDetailed, RESULT } from '../utils/textExtract.js'
+import PreviewModal from './PreviewModal.jsx'
 
-function FileRow({ file, onDelete, onDownload }) {
-  const toast = useToast()
+function FileRow({ file, onDelete, onDownload, onPreview }) {
   const color = TYPE_COLOR[file.type] || '#6B7280'
   const label = TYPE_LABEL[file.type] || file.type
   return (
     <div className="file-row">
-      <div className="file-ico" style={{ background: color }}>
+      <div className="file-ico" style={{ background: color, cursor: 'pointer' }} onClick={() => onPreview(file)}>
         {label.length > 3 ? label.slice(0, 3) : label}
       </div>
-      <div className="file-meta">
+      <div className="file-meta" style={{ cursor: 'pointer' }} onClick={() => onPreview(file)}>
         <div className="fn">{file.name}</div>
         <div className="info">
           <span>{(file.ext || '').toUpperCase()} · {fmtSize(file.size)}</span>
@@ -30,7 +30,7 @@ function FileRow({ file, onDelete, onDownload }) {
         )}
       </div>
       <div style={{ display: 'flex', gap: 4 }}>
-        <button className="icon-btn" title="ดูตัวอย่าง" onClick={() => toast('Preview ยังไม่รองรับ', 'err')}>
+        <button className="icon-btn" title="ดูตัวอย่าง" onClick={() => onPreview(file)}>
           <Icon name="eye" size={15} />
         </button>
         <button className="icon-btn" title="ดาวน์โหลด" onClick={() => onDownload(file)}>
@@ -59,6 +59,7 @@ export default function ProjectDrawer({ project, onClose, onChanged }) {
   const [reindexing, setReindexing] = useState(false)
   const [reindexProgress, setReindexProgress] = useState({ current: 0, total: 0 })
   const [reindexReport, setReindexReport] = useState(null) // { ok, failed: [{name, reason}], empty: [{name, reason}] }
+  const [previewFile, setPreviewFile] = useState(null)
   const toast = useToast()
 
   useEffect(() => {
@@ -321,7 +322,13 @@ export default function ProjectDrawer({ project, onClose, onChanged }) {
                   </div>
                   <div className="vg-body">
                     {shown.map((f) => (
-                      <FileRow key={f.id} file={f} onDelete={handleDelete} onDownload={handleDownload} />
+                      <FileRow
+                        key={f.id}
+                        file={f}
+                        onDelete={handleDelete}
+                        onDownload={handleDownload}
+                        onPreview={setPreviewFile}
+                      />
                     ))}
                   </div>
                 </div>
@@ -333,6 +340,10 @@ export default function ProjectDrawer({ project, onClose, onChanged }) {
 
       {reindexReport && (
         <ReindexReportModal report={reindexReport} onClose={() => setReindexReport(null)} />
+      )}
+
+      {previewFile && (
+        <PreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
       )}
     </>
   )

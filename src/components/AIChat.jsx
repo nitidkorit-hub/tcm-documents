@@ -4,6 +4,7 @@ import { useToast } from './Toast.jsx'
 import { fmtDate, fmtSize, TYPE_LABEL, normalizeFile, computeIsLatest } from '../utils/format.js'
 import { fetchProjects, fetchFiles, downloadFile } from '../api/supabase.js'
 import { searchFiles } from '../utils/aiSearch.js'
+import PreviewModal from './PreviewModal.jsx'
 
 // Call backend /api/chat for real Claude AI (if configured)
 async function callClaudeAPI(query, ctx) {
@@ -35,6 +36,7 @@ export default function AIChat({ open, onClose }) {
   const [thinking, setThinking] = useState(false)
   const [ctx, setCtx] = useState({ projects: [], files: [] })
   const [aiMode, setAiMode] = useState('local') // 'local' or 'claude'
+  const [previewFile, setPreviewFile] = useState(null)
   const endRef = useRef(null)
   const toast = useToast()
 
@@ -166,12 +168,10 @@ export default function AIChat({ open, onClose }) {
                     <div
                       key={f.id}
                       className="file-pill"
-                      onClick={() => triggerDownload(f.id, f.name)}
-                      style={{ marginTop: 0, flexDirection: 'column', alignItems: 'stretch' }}
+                      style={{ marginTop: 0, flexDirection: 'column', alignItems: 'stretch', cursor: 'default' }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Icon name="download" size={14} style={{ color: 'var(--green)', flexShrink: 0 }} />
-                        <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ minWidth: 0, flex: 1, cursor: 'pointer' }} onClick={() => setPreviewFile(f)}>
                           <div
                             className="nm"
                             style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
@@ -184,6 +184,22 @@ export default function AIChat({ open, onClose }) {
                             {f.uploader && ` · ${f.uploader}`}
                           </div>
                         </div>
+                        <button
+                          className="icon-btn"
+                          onClick={() => setPreviewFile(f)}
+                          title="ดูตัวอย่าง"
+                          style={{ width: 26, height: 26 }}
+                        >
+                          <Icon name="eye" size={13} />
+                        </button>
+                        <button
+                          className="icon-btn"
+                          onClick={() => triggerDownload(f.id, f.name)}
+                          title="ดาวน์โหลด"
+                          style={{ width: 26, height: 26, color: 'var(--green)' }}
+                        >
+                          <Icon name="download" size={13} />
+                        </button>
                       </div>
                       {f._snippet && (
                         <div
@@ -267,6 +283,10 @@ export default function AIChat({ open, onClose }) {
           <Icon name="send" size={16} />
         </button>
       </div>
+
+      {previewFile && (
+        <PreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
+      )}
     </div>
   )
 }

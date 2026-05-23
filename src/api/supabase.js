@@ -186,6 +186,25 @@ export async function getFileBlob(storagePath) {
   return data;
 }
 
+// Get public URL for a file (used by Preview)
+export function getFilePublicUrl(storagePath) {
+  if (!storagePath) return '';
+  const { data } = supabase.storage
+    .from('documents')
+    .getPublicUrl(storagePath);
+  return data?.publicUrl || '';
+}
+
+// Get signed URL (more secure, time-limited) — alternative to public URL
+export async function getFileSignedUrl(storagePath, expiresIn = 3600) {
+  if (!storagePath) return '';
+  const { data, error } = await supabase.storage
+    .from('documents')
+    .createSignedUrl(storagePath, expiresIn);
+  if (error) throw error;
+  return data?.signedUrl || '';
+}
+
 export async function deleteFile(fileId) {
   const { error } = await supabase
     .from('files')
