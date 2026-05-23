@@ -404,14 +404,53 @@ function ReindexReportModal({ report, onClose }) {
             </div>
           )}
 
-          <div style={{ marginTop: 12, padding: 10, background: 'var(--steel-50)', borderRadius: 8, fontSize: 12 }}>
-            <strong>💡 คำแนะนำ:</strong>
-            <ul style={{ margin: '6px 0 0 18px', padding: 0 }}>
-              <li>PDF สแกน (ภาพ) → ต้องแปลงเป็น PDF text-based ก่อน (ใช้ Adobe Acrobat OCR)</li>
-              <li>ไฟล์ผิดพลาด → ลอง Upload ใหม่ หรือลองในไฟล์ขนาดเล็กกว่า</li>
-              <li>ระบบยังค้นหาด้วยชื่อไฟล์ + ประเภท + วันที่ ได้ปกติ</li>
-            </ul>
-          </div>
+          {/* Smart recommendations based on error patterns */}
+          {(empty.length > 0 || failed.length > 0) && (
+            <div style={{ marginTop: 12, padding: 12, background: 'var(--steel-50)', borderRadius: 8, fontSize: 12 }}>
+              <strong style={{ color: 'var(--navy)' }}>💡 วิธีแก้ไข:</strong>
+              <ul style={{ margin: '8px 0 0 18px', padding: 0, lineHeight: 1.6 }}>
+                {empty.some((e) => /สแกน|ภาพ|text layer/i.test(e.reason || '')) && (
+                  <li>
+                    <strong>PDF สแกน (ภาพ):</strong> ใช้ OCR แปลงก่อน
+                    <div style={{ fontSize: 11, marginLeft: 8, color: 'var(--gray-700)' }}>
+                      → Adobe Acrobat Pro: Tools → Scan & OCR → Enhance
+                      <br />
+                      → ฟรี: ilovepdf.com/ocr-pdf หรือ Google Drive (Open with Google Docs)
+                    </div>
+                  </li>
+                )}
+                {failed.some((e) => /Unicode|escape sequence/i.test(e.reason || '')) && (
+                  <li>
+                    <strong>PDF Unicode error:</strong> PDF ใช้ font/encoding พิเศษ
+                    <div style={{ fontSize: 11, marginLeft: 8, color: 'var(--gray-700)' }}>
+                      → ลอง Save As ใหม่ใน Acrobat (File → Save As Other → Optimized PDF)
+                      <br />
+                      → หรือ Print to PDF ใหม่
+                    </div>
+                  </li>
+                )}
+                {failed.some((e) => /central directory|zip file/i.test(e.reason || '')) && (
+                  <li>
+                    <strong>DOCX format error:</strong> ไฟล์อาจเป็น .doc รูปแบบเก่า
+                    <div style={{ fontSize: 11, marginLeft: 8, color: 'var(--gray-700)' }}>
+                      → เปิดด้วย Word → File → Save As → Word Document (.docx) → Upload ใหม่
+                    </div>
+                  </li>
+                )}
+                {failed.some((e) => /\.doc รูปแบบเก่า|Word 97/i.test(e.reason || '')) && (
+                  <li>
+                    <strong>.doc รูปแบบเก่า:</strong> ระบบรองรับเฉพาะ .docx
+                    <div style={{ fontSize: 11, marginLeft: 8, color: 'var(--gray-700)' }}>
+                      → Save As เป็น .docx แล้ว Upload ใหม่
+                    </div>
+                  </li>
+                )}
+                <li>
+                  <strong>ข้อมูลเพิ่มเติม:</strong> ระบบยังค้นหาด้วย <em>ชื่อไฟล์ · ประเภท · วันที่ · ผู้อัพ</em> ได้ปกติ
+                </li>
+              </ul>
+            </div>
+          )}
         </div>
         <div className="modal-foot">
           <button className="btn btn-primary" onClick={onClose}>
