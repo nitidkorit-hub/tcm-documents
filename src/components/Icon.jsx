@@ -66,6 +66,24 @@ export default function Icon({ name, size = 18, stroke = 1.7, style, ...props })
       return <svg {...common}><path d="m23 6-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/></svg>
     case 'logout':
       return <svg {...common}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
+    case 'mic':
+      return <svg {...common}><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v4M8 23h8"/></svg>
+    case 'stop':
+      return <svg {...common}><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+    case 'sound':
+      return <svg {...common}><path d="M11 5 6 9H2v6h4l5 4Z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+    case 'pen':
+      return <svg {...common}><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+    case 'arrow-l':
+      return <svg {...common}><path d="M19 12H5M11 5l-7 7 7 7"/></svg>
+    case 'save':
+      return <svg {...common}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
+    case 'pdf':
+      return <svg {...common}><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"/><path d="M14 3v5h5"/><path d="M8.5 17v-4h1.2a1.3 1.3 0 1 1 0 2.6H8.5m4-2.6h1.4a1.3 1.3 0 0 1 1.3 1.3v0a1.3 1.3 0 0 1-1.3 1.3H12.5m0-2.6V17m4-4h1.8M17.8 15h-1.3v2"/></svg>
+    case 'word':
+      return <svg {...common}><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"/><path d="M14 3v5h5"/><path d="M7.5 13l1 4 1.2-4 1.2 4 1-4"/></svg>
+    case 'doc-text':
+      return <svg {...common}><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"/><path d="M14 3v5h5M9 13h6M9 16h6M9 10h2"/></svg>
     default:
       return null
   }

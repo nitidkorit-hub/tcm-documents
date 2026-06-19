@@ -1,7 +1,7 @@
 import Icon from './Icon.jsx'
 import { signOut } from '../api/supabase.js'
 
-export default function Topbar({ user, active, onNav, onOpenUpload, onOpenChat }) {
+export default function Topbar({ user, active, onNav, onOpenUpload, onOpenChat, onOpenMOM }) {
   const initials = (() => {
     const n = user?.user_metadata?.full_name || user?.email || '?'
     return n.slice(0, 2).toUpperCase()
@@ -31,6 +31,9 @@ export default function Topbar({ user, active, onNav, onOpenUpload, onOpenChat }
         </nav>
         <button className="btn btn-sm" style={{ background: 'var(--gray-100)', color: 'var(--navy)' }} title="แจ้งเตือน">
           <Icon name="bell" size={15} />
+        </button>
+        <button className="mom-fab-btn" onClick={onOpenMOM}>
+          <Icon name="doc-text" size={15} /> เขียน MOM
         </button>
         <button className="btn btn-sm btn-navy" onClick={onOpenUpload}>
           <Icon name="upload" size={15} /> อัปโหลด

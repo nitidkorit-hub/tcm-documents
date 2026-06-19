@@ -10,6 +10,7 @@ import ProjectDrawer from './components/ProjectDrawer.jsx'
 import UploadModal from './components/UploadModal.jsx'
 import NewProjectModal from './components/NewProjectModal.jsx'
 import AIChat, { ChatFab } from './components/AIChat.jsx'
+import MOMWriter from './components/MOMWriter.jsx'
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -48,6 +49,7 @@ function MainApp({ user }) {
   const [uploadOpen, setUploadOpen] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
+  const [momOpen, setMomOpen] = useState(false)
   const [drawerProject, setDrawerProject] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [heroStats, setHeroStats] = useState({ projects: 0, files: 0, types: 0 })
@@ -121,6 +123,7 @@ function MainApp({ user }) {
         onNav={setActive}
         onOpenUpload={() => setUploadOpen(true)}
         onOpenChat={() => setChatOpen(true)}
+        onOpenMOM={() => setMomOpen(true)}
       />
 
       <Hero
@@ -129,6 +132,7 @@ function MainApp({ user }) {
         projects={heroProjects}
         onUpload={() => setUploadOpen(true)}
         onAsk={() => setChatOpen(true)}
+        onOpenMOM={() => setMomOpen(true)}
       />
 
       <Dashboard
@@ -170,6 +174,15 @@ function MainApp({ user }) {
 
       {!chatOpen && <ChatFab onClick={() => setChatOpen(true)} />}
       <AIChat open={chatOpen} onClose={() => setChatOpen(false)} />
+
+      {momOpen && (
+        <MOMWriter
+          projects={heroProjects}
+          user={user}
+          onClose={() => setMomOpen(false)}
+          onSaved={refresh}
+        />
+      )}
     </div>
   )
 }

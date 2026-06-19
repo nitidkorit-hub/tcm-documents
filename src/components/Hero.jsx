@@ -1,7 +1,7 @@
 import Icon from './Icon.jsx'
 import { fmtDate, fmtSize, TYPE_LABEL, TYPE_COLOR } from '../utils/format.js'
 
-export default function Hero({ stats, recentFiles, projects, onUpload, onAsk }) {
+export default function Hero({ stats, recentFiles, projects, onUpload, onAsk, onOpenMOM }) {
   return (
     <section className="hero">
       <div className="container">
@@ -27,6 +27,9 @@ export default function Hero({ stats, recentFiles, projects, onUpload, onAsk }) 
               </button>
               <button className="btn btn-secondary" onClick={onAsk}>
                 <Icon name="sparkles" size={16} /> ลองถาม AI
+              </button>
+              <button className="btn btn-hero-pink" onClick={onOpenMOM}>
+                <Icon name="mic" size={16} /> เขียน MOM ด้วยเสียง
               </button>
             </div>
             <div className="hero-stats">
