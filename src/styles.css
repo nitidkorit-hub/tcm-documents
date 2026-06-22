@@ -1008,35 +1008,28 @@ input, textarea, select { font-family: inherit; }
   border-radius: 6px; padding: 52px 56px; color: #1B1F26;
   font-family: 'Sarabun'; font-size: 14px; line-height: 1.65;
 }
-.mom-doc .doc-org { text-align: center; font-family: 'Prompt'; font-weight: 600; color: var(--navy); font-size: 15px; }
-.mom-doc .doc-title { text-align: center; font-family: 'Prompt'; font-weight: 600; font-size: 19px; color: #1B1F26; margin: 4px 0 2px; }
-.mom-doc .doc-proj { text-align: center; color: var(--gray-500); font-size: 13px; margin-bottom: 22px; }
-.mom-doc .doc-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 28px; padding: 16px 0; border-top: 1.5px solid #1B1F26; border-bottom: 1px solid var(--gray-200); margin-bottom: 18px; }
-.mom-doc .doc-meta .m { font-size: 13px; }
-.mom-doc .doc-meta .m b { font-family: 'Prompt'; font-weight: 600; color: var(--navy); }
+.mom-doc .doc-title { text-align: center; font-family: 'Prompt'; font-weight: 700; font-size: 17px; color: #1B1F26; margin: 0 0 2px; }
+.mom-doc .doc-datetime, .mom-doc .doc-location { text-align: center; font-family: 'Prompt'; font-weight: 600; font-size: 13px; color: var(--gray-700); margin: 0; }
 .mom-doc h4.doc-sec { font-family: 'Prompt'; font-weight: 600; font-size: 15px; color: var(--navy); margin: 22px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--gray-200); }
-.mom-doc .doc-attendees { margin: 0; padding-left: 20px; }
-.mom-doc .doc-attendees li { margin-bottom: 3px; }
-.mom-doc .doc-agenda-item { margin-bottom: 16px; }
-.mom-doc .doc-agenda-item .ah { font-family: 'Prompt'; font-weight: 600; color: #1B1F26; font-size: 14px; }
-.mom-doc .doc-agenda-item .ad { margin: 4px 0 0; }
-.mom-doc .doc-agenda-item .ar { margin-top: 5px; padding: 8px 12px; background: var(--navy-50); border-left: 3px solid var(--steel); border-radius: 0 6px 6px 0; font-size: 13px; }
-.mom-doc .doc-agenda-item .ar b { color: var(--navy); font-family: 'Prompt'; }
-.mom-doc table.doc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.mom-doc table.doc-table th { background: var(--navy); color: white; font-family: 'Prompt'; font-weight: 500; padding: 8px 10px; text-align: left; }
-.mom-doc table.doc-table th:first-child { width: 38px; text-align: center; }
-.mom-doc table.doc-table td { padding: 8px 10px; border-bottom: 1px solid var(--gray-200); vertical-align: top; }
-.mom-doc table.doc-table td.c { text-align: center; color: var(--gray-500); }
-.mom-doc table.doc-table .owner { font-weight: 600; color: var(--navy); white-space: nowrap; }
-.mom-doc table.doc-table .due { white-space: nowrap; color: var(--pink-700); }
-.mom-doc .doc-carry { margin: 0; padding-left: 20px; }
-.mom-doc .doc-carry li { margin-bottom: 6px; }
-.mom-doc .doc-carry .st { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: rgba(245,166,35,0.16); color: #C77F00; font-weight: 600; margin-left: 6px; }
-.mom-doc .doc-next { padding: 12px 16px; background: var(--pink-50); border-radius: 8px; font-size: 14px; }
-.mom-doc .doc-sign { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 40px; }
-.mom-doc .doc-sign .s { text-align: center; }
-.mom-doc .doc-sign .line { border-top: 1px dotted #888; margin: 38px 14px 8px; }
-.mom-doc .doc-sign .role { font-size: 13px; color: var(--gray-500); }
+.mom-doc table.doc-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 18px; }
+.mom-doc table.doc-table th { background: var(--navy); color: white; font-family: 'Prompt'; font-weight: 500; padding: 7px 8px; text-align: center; border: 1px solid var(--navy); }
+.mom-doc table.doc-table td { padding: 7px 8px; border: 1px solid var(--gray-200); vertical-align: top; }
+.mom-doc table.doc-table td.vno { text-align: center; font-family: 'Prompt'; font-weight: 600; color: var(--navy); width: 36px; }
+.mom-doc table.doc-table td.vtopic { font-family: 'Prompt'; font-weight: 600; color: #1B1F26; }
+.mom-doc table.doc-table td.detail { white-space: pre-line; }
+.mom-doc table.doc-table td.c { text-align: center; color: var(--gray-700); white-space: nowrap; }
+.mom-doc .doc-closing { font-family: 'Prompt'; font-weight: 600; color: var(--navy); margin-top: 14px; }
+.mom-doc .doc-recorder { margin-top: 48px; text-align: right; padding-right: 24px; }
+.mom-doc .doc-recorder .role { font-family: 'Prompt'; font-weight: 600; font-size: 13px; color: var(--navy); }
+.mom-doc .doc-recorder .name { font-size: 13px; margin-top: 2px; color: var(--gray-700); }
+.mom-doc .doc-page-break { border-top: 1px dashed var(--gray-300); margin: 32px 0; position: relative; }
+.mom-doc .doc-page-break::after {
+  content: 'หน้าถัดไป (รายชื่อผู้เข้าร่วมประชุม)'; position: absolute; top: -9px; left: 50%; transform: translateX(-50%);
+  background: white; padding: 0 10px; font-size: 11px; color: var(--gray-400);
+}
+.mom-doc table.doc-attendee-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; }
+.mom-doc table.doc-attendee-table td { padding: 7px 10px; border: 1px solid var(--gray-200); }
+.mom-doc table.doc-attendee-table td.c { width: 40px; text-align: center; color: var(--gray-500); }
 
 /* screen capture */
 .mom-share-bar {

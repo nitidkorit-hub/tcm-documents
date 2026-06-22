@@ -50,7 +50,7 @@ function FileRow({ file, onDelete, onDownload, onPreview }) {
   )
 }
 
-export default function ProjectDrawer({ project, onClose, onChanged }) {
+export default function ProjectDrawer({ project, refreshKey, onClose, onChanged }) {
   const [files, setFiles] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -65,7 +65,7 @@ export default function ProjectDrawer({ project, onClose, onChanged }) {
   useEffect(() => {
     if (!project) return
     load()
-  }, [project])
+  }, [project, refreshKey])
 
   const load = async () => {
     setLoading(true)

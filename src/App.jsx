@@ -152,6 +152,7 @@ function MainApp({ user }) {
       {drawerProject && (
         <ProjectDrawer
           project={drawerProject}
+          refreshKey={refreshKey}
           onClose={() => setDrawerProject(null)}
           onChanged={refresh}
         />

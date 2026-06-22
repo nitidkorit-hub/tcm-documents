@@ -64,7 +64,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ fallback: true, error: 'Parse error' })
     }
 
-    if (!mom || !Array.isArray(mom.agenda)) {
+    if (!mom || typeof mom !== 'object') {
       return res.status(200).json({ fallback: true, error: 'Invalid schema' })
     }
 

@@ -6,10 +6,25 @@ import { normalizeFile } from '../utils/format.js'
 
 // ---------- helpers ----------
 const TH_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม']
+const TH_DAYS = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์']
 const toThaiDate = (iso) => {
   const d = new Date(iso)
   return `${d.getDate()} ${TH_MONTHS[d.getMonth()]} ${d.getFullYear() + 543}`
 }
+const toThaiDateLine = (iso) => {
+  const d = new Date(iso)
+  return `วัน${TH_DAYS[d.getDay()]}ที่ ${d.getDate()} ${TH_MONTHS[d.getMonth()]} พ.ศ. ${d.getFullYear() + 543}`
+}
+
+// Fixed 5-topic agenda — matches the company's standard MOM template exactly
+// (locked by request: topics/order never change, AI only fills content per topic)
+const TOPIC_DEFS = [
+  { no: 1, topic: 'รับรองรายงานการประชุม' },
+  { no: 2, topic: 'เรื่องแจ้งเพื่อทราบ' },
+  { no: 3, topic: 'เรื่องติดตาม' },
+  { no: 4, topic: 'เรื่องนำเสนอและเพิ่มเติมอื่นๆ' },
+  { no: 5, topic: 'ประชุมครั้งถัดไป' },
+]
 const escapeHtml = (s) =>
   String(s == null ? '' : s)
     .replace(/&/g, '&amp;')
@@ -49,34 +64,38 @@ const buildGlossary = (proj, files) => {
 }
 
 // ---------- document builder (shared by preview + export) ----------
-const buildDocInner = (mom, meta, screenshots = []) => {
-  const att = (mom.attendees || [])
-    .map((a) => `<li>${escapeHtml(typeof a === 'string' ? a : a.name + (a.role ? ` — ${a.role}` : ''))}</li>`)
+// Matches the company's real MOM template exactly: title/date/location header
+// (no org/project line), single วาระ table, one recorder signature, attendee
+// list as a numbered table on its own page.
+const buildDocInner = (mom, meta, screenshots = [], recorderName = '') => {
+  const header = `
+  <div class="doc-title">${escapeHtml(mom.meetingName)}</div>
+  <div class="doc-datetime">${escapeHtml(mom.dateTimeLine)}</div>
+  <div class="doc-location">สถานที่ประชุม : ${escapeHtml(mom.location)}</div>`
+
+  const agendaRows = (mom.agenda || [])
+    .map((t) => {
+      const items = (t.items || []).filter((it) => (it.detail || '').trim())
+      if (!items.length) {
+        return `<tr><td class="vno">${escapeHtml(t.no)}</td><td class="vtopic">${escapeHtml(t.topic)}</td><td class="c">-</td><td class="c">-</td><td class="c">-</td></tr>`
+      }
+      const head = `<tr><td class="vno">${escapeHtml(t.no)}</td><td class="vtopic">${escapeHtml(t.topic)}</td><td></td><td></td><td></td></tr>`
+      const rows = items
+        .map(
+          (it) => `
+        <tr>
+          <td></td>
+          <td class="detail">- ${escapeHtml(it.detail).replace(/\n/g, '<br/>- ')}</td>
+          <td class="c">${escapeHtml(it.responsible || '-')}</td>
+          <td class="c">${escapeHtml(it.due || '-')}</td>
+          <td class="c">${escapeHtml(it.status || '-')}</td>
+        </tr>`
+        )
+        .join('')
+      return head + rows
+    })
     .join('')
-  const agenda = (mom.agenda || [])
-    .map(
-      (item) => `
-    <div class="doc-agenda-item">
-      <div class="ah">วาระที่ ${escapeHtml(item.no)} · ${escapeHtml(item.topic)}</div>
-      ${item.discussion ? `<p class="ad">${escapeHtml(item.discussion)}</p>` : ''}
-      ${item.resolution ? `<div class="ar"><b>มติที่ประชุม:</b> ${escapeHtml(item.resolution)}</div>` : ''}
-    </div>`
-    )
-    .join('')
-  const actions = (mom.actionItems || [])
-    .map(
-      (a, i) => `
-    <tr>
-      <td class="c">${i + 1}</td>
-      <td>${escapeHtml(a.task)}</td>
-      <td class="owner">${escapeHtml(a.owner || '-')}</td>
-      <td class="due">${escapeHtml(a.due || '-')}</td>
-    </tr>`
-    )
-    .join('')
-  const carry = (mom.carryForward || [])
-    .map((c) => `<li>${escapeHtml(c.item)}${c.status ? `<span class="st">${escapeHtml(c.status)}</span>` : ''}</li>`)
-    .join('')
+
   const shots = (screenshots || [])
     .map(
       (s) => `
@@ -87,113 +106,114 @@ const buildDocInner = (mom, meta, screenshots = []) => {
     )
     .join('')
 
+  const attendeeRows = (mom.attendees || [])
+    .map((a, i) => `<tr><td class="c">${i + 1}</td><td>${escapeHtml(a)}</td></tr>`)
+    .join('')
+
   return `
-  <div class="doc-org">${escapeHtml(meta.org)}</div>
-  <div class="doc-title">รายงานการประชุม (Minutes of Meeting)</div>
-  <div class="doc-proj">โครงการ ${escapeHtml(meta.projectName)} · รหัส ${escapeHtml(meta.projectCode)}</div>
+  ${header}
 
-  <div class="doc-meta">
-    <div class="m"><b>เรื่อง:</b> ${escapeHtml(mom.meetingTitle || `การประชุม ครั้งที่ ${meta.no}`)}</div>
-    <div class="m"><b>ครั้งที่:</b> ${escapeHtml(meta.no)}</div>
-    <div class="m"><b>วัน–เวลา:</b> ${escapeHtml(mom.dateTime || '')}</div>
-    <div class="m"><b>สถานที่:</b> ${escapeHtml(mom.location || '')}</div>
-  </div>
-
-  <h4 class="doc-sec">ผู้เข้าร่วมประชุม</h4>
-  <ul class="doc-attendees">${att || '<li>—</li>'}</ul>
-
-  <h4 class="doc-sec">ระเบียบวาระและมติที่ประชุม</h4>
-  ${agenda || '<p>—</p>'}
-
-  <h4 class="doc-sec">สรุปการมอบหมายงาน (Action Items)</h4>
   <table class="doc-table">
-    <thead><tr><th>#</th><th>รายการที่ต้องดำเนินการ</th><th>ผู้รับผิดชอบ</th><th>กำหนดเสร็จ</th></tr></thead>
-    <tbody>${actions || '<tr><td class="c">-</td><td>—</td><td>-</td><td>-</td></tr>'}</tbody>
+    <thead>
+      <tr><th rowspan="2">วาระ</th><th rowspan="2">รายละเอียด</th><th rowspan="2">ผู้ดำเนินการ</th><th colspan="2">กำหนดแล้วเสร็จ</th></tr>
+      <tr><th>กำหนด</th><th>แล้วเสร็จ</th></tr>
+    </thead>
+    <tbody>${agendaRows}</tbody>
   </table>
 
-  ${carry ? `<h4 class="doc-sec">เรื่องสืบเนื่อง / ติดตามจากครั้งก่อน</h4><ul class="doc-carry">${carry}</ul>` : ''}
+  <div class="doc-closing">ปิดการประชุมเวลา ${escapeHtml(mom.closingTime)}</div>
 
   ${shots ? `<h4 class="doc-sec">ภาพหน้าจอประกอบการประชุม</h4><div class="doc-shots">${shots}</div>` : ''}
 
-  <h4 class="doc-sec">นัดหมายการประชุมครั้งต่อไป</h4>
-  <div class="doc-next">${escapeHtml(mom.nextMeeting || '—')}</div>
+  <div class="doc-recorder">
+    <div class="role">ผู้บันทึกประชุม</div>
+    <div class="name">${escapeHtml(recorderName)}</div>
+  </div>
 
-  <div class="doc-sign">
-    <div class="s"><div class="line"></div><div class="role">ผู้บันทึกการประชุม</div></div>
-    <div class="s"><div class="line"></div><div class="role">ผู้รับรองรายงาน</div></div>
-  </div>`
+  <div class="doc-page-break"></div>
+  ${header}
+  <h4 class="doc-sec">รายชื่อผู้เข้าร่วมประชุม</h4>
+  <table class="doc-attendee-table">
+    <tbody>${attendeeRows || '<tr><td class="c">-</td><td>—</td></tr>'}</tbody>
+  </table>`
 }
 
 const EXPORT_CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600&family=Sarabun:wght@400;500;600;700&display=swap');
 body { font-family: 'Sarabun','TH Sarabun New',sans-serif; color:#1B1F26; font-size:14px; line-height:1.65; padding:24px; }
-.doc-org { text-align:center; font-family:'Prompt'; font-weight:600; color:#1F3A5F; font-size:15px; }
-.doc-title { text-align:center; font-family:'Prompt'; font-weight:600; font-size:19px; margin:4px 0 2px; }
-.doc-proj { text-align:center; color:#6B7280; font-size:13px; margin-bottom:22px; }
-.doc-meta { display:grid; grid-template-columns:1fr 1fr; gap:6px 28px; padding:16px 0; border-top:1.5px solid #1B1F26; border-bottom:1px solid #E5E9EF; margin-bottom:18px; }
-.doc-meta .m b { font-family:'Prompt'; font-weight:600; color:#1F3A5F; }
+.doc-title { text-align:center; font-family:'Prompt'; font-weight:700; font-size:16px; margin:0 0 2px; }
+.doc-datetime, .doc-location { text-align:center; font-family:'Prompt'; font-weight:600; font-size:13px; margin:0; }
 h4.doc-sec { font-family:'Prompt'; font-weight:600; font-size:15px; color:#1F3A5F; margin:22px 0 10px; padding-bottom:6px; border-bottom:1px solid #E5E9EF; }
-.doc-attendees, .doc-carry { padding-left:20px; }
-.doc-attendees li, .doc-carry li { margin-bottom:4px; }
-.doc-agenda-item { margin-bottom:16px; }
-.doc-agenda-item .ah { font-family:'Prompt'; font-weight:600; font-size:14px; }
-.doc-agenda-item .ad { margin:4px 0 0; }
-.doc-agenda-item .ar { margin-top:5px; padding:8px 12px; background:#EEF2F8; border-left:3px solid #3A6EA5; border-radius:0 6px 6px 0; font-size:13px; }
-.doc-agenda-item .ar b { color:#1F3A5F; font-family:'Prompt'; }
-table.doc-table { width:100%; border-collapse:collapse; font-size:13px; }
-table.doc-table th { background:#1F3A5F; color:#fff; font-family:'Prompt'; font-weight:500; padding:8px 10px; text-align:left; }
-table.doc-table td { padding:8px 10px; border-bottom:1px solid #E5E9EF; vertical-align:top; }
-table.doc-table td.c { text-align:center; color:#6B7280; }
-.owner { font-weight:600; color:#1F3A5F; }
-.due { color:#BE2A6E; }
-.doc-carry .st { font-size:12px; padding:1px 8px; border-radius:999px; background:rgba(245,166,35,0.16); color:#C77F00; font-weight:600; margin-left:6px; }
-.doc-shots { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:4px 0 8px; }
+table.doc-table { width:100%; border-collapse:collapse; font-size:13px; margin-top:16px; }
+table.doc-table th { background:#1F3A5F; color:#fff; font-family:'Prompt'; font-weight:500; padding:6px 8px; text-align:center; border:1px solid #1F3A5F; }
+table.doc-table td { padding:6px 8px; border:1px solid #E5E9EF; vertical-align:top; }
+table.doc-table td.vno { text-align:center; font-family:'Prompt'; font-weight:600; color:#1F3A5F; width:36px; }
+table.doc-table td.vtopic { font-family:'Prompt'; font-weight:600; color:#1B1F26; }
+table.doc-table td.detail { white-space:pre-line; }
+table.doc-table td.c { text-align:center; color:#1B1F26; white-space:nowrap; }
+.doc-shots { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:16px 0 8px; }
 .doc-shot { border:1px solid #E5E9EF; border-radius:8px; overflow:hidden; }
 .doc-shot img { width:100%; display:block; }
 .doc-shot .cap { font-size:12px; color:#6B7280; padding:6px 8px; border-top:1px solid #E5E9EF; }
-.doc-next { padding:12px 16px; background:#FCE7F2; border-radius:8px; }
-.doc-sign { display:grid; grid-template-columns:1fr 1fr; gap:40px; margin-top:48px; }
-.doc-sign .s { text-align:center; }
-.doc-sign .line { border-top:1px dotted #888; margin:42px 14px 8px; }
-.doc-sign .role { font-size:13px; color:#6B7280; }
+.doc-closing { font-family:'Prompt'; font-weight:600; margin-top:14px; }
+.doc-recorder { margin-top:48px; text-align:right; padding-right:24px; }
+.doc-recorder .role { font-family:'Prompt'; font-weight:600; font-size:13px; }
+.doc-recorder .name { font-size:13px; margin-top:2px; }
+.doc-page-break { page-break-before: always; height:0; }
+table.doc-attendee-table { width:100%; border-collapse:collapse; font-size:13px; margin-top:12px; }
+table.doc-attendee-table td { padding:6px 10px; border:1px solid #E5E9EF; }
+table.doc-attendee-table td.c { width:40px; text-align:center; color:#6B7280; }
 `
 
-// ---------- fallback (used if Claude API is unavailable) ----------
-const fallbackMOM = (proj, meta) => ({
-  meetingTitle: `การประชุมประจำสัปดาห์ ครั้งที่ ${meta.no}`,
-  dateTime: `${toThaiDate(meta.today)} เวลา 09:00 น.`,
-  location: 'ห้องประชุมสำนักงานสนาม',
-  attendees: ['ผู้บันทึกการประชุม (ประธาน)', `ผู้แทน ${proj.client || 'เจ้าของงาน'}`],
-  agenda: [
-    {
-      no: 1,
-      topic: 'สรุปประเด็นจากบทถอดเสียง',
-      discussion: meta.transcript ? meta.transcript.slice(0, 400) : 'ไม่มีข้อมูลเพียงพอจะสรุปอัตโนมัติ กรุณาตรวจ Transcript และสร้างรายงานใหม่',
-      resolution: 'รอการตรวจสอบและปรับแก้โดยผู้บันทึกการประชุม',
-    },
-  ],
-  actionItems: [],
-  carryForward: [],
-  nextMeeting: 'รอกำหนดนัดครั้งต่อไป',
-})
+// ---------- compose final doc model from raw AI output (or partial/no output) ----------
+// Topics are always the fixed 5 from TOPIC_DEFS — only "items" content varies.
+const composeMom = (raw, proj, meta) => {
+  const usedFallback = !raw
+  const itemsFor = (i) => {
+    const key = `topic${i}Items`
+    if (Array.isArray(raw?.[key])) return raw[key]
+    if (usedFallback && i === 2) {
+      return [
+        {
+          detail: meta.transcript
+            ? meta.transcript.slice(0, 400)
+            : 'ไม่มีข้อมูลเพียงพอจะสรุปอัตโนมัติ กรุณาตรวจ Transcript และสร้างรายงานใหม่',
+          responsible: 'ALL',
+          due: '-',
+          status: 'รอตรวจสอบ',
+        },
+      ]
+    }
+    return []
+  }
+  const agenda = TOPIC_DEFS.map((t, i) => ({ ...t, items: itemsFor(i + 1) }))
+  const timeRange = raw?.timeRange || '09.00 – 12.00 น.'
+  const closingTime = raw?.closingTime || timeRange.split(/[–-]/).pop().trim()
+
+  return {
+    meetingName: raw?.meetingName || `${proj.name} – การประชุม`,
+    dateTimeLine: `${toThaiDateLine(meta.today)} เวลา ${timeRange}`,
+    location: raw?.location || 'ห้องประชุม',
+    closingTime,
+    agenda,
+    attendees: Array.isArray(raw?.attendees) ? raw.attendees : [],
+  }
+}
 
 const buildPrompt = (transcript, proj, meta, formatRef, glossary) => {
-  const formatHint = formatRef
-    ? `- รูปแบบอ้างอิง: ให้ยึดรูปแบบ/ลำดับหัวข้อตามฟอร์มเดิมของโครงการ (อ้างอิงจาก "${formatRef.name}")${
-        formatRef.contentText
-          ? `\n  ตัวอย่างเนื้อหาฟอร์มเดิม (ใช้เป็นแนวทางการเรียบเรียงเท่านั้น ไม่ต้องคัดลอกเนื้อหา):\n  """\n  ${formatRef.contentText.slice(0, 1500)}\n  """`
-          : ''
-      }`
-    : '- ใช้ฟอร์มมาตรฐานกลางของบริษัท'
+  const styleHint = formatRef?.contentText
+    ? `\nตัวอย่างโทนภาษา/ลีลาการเขียนจากรายงานก่อนหน้าของบริษัท (ใช้เป็นแนวทางโทนภาษาเท่านั้น ไม่ต้องคัดลอกเนื้อหา):\n"""\n${formatRef.contentText.slice(0, 1000)}\n"""`
+    : ''
 
-  return `คุณเป็นเลขานุการที่ประชุมมืออาชีพของบริษัทรับเหมาก่อสร้าง หน้าที่คือเรียบเรียง "บันทึกการประชุม (MOM)" ภาษาไทยที่เป็นทางการ จากบทถอดเสียงดิบ
+  return `คุณเป็นเลขานุการที่ประชุมมืออาชีพของบริษัทรับเหมาก่อสร้าง หน้าที่คือเรียบเรียง "บันทึกการประชุม (MOM)" ภาษาไทยที่เป็นทางการ จากบทถอดเสียงดิบ ตามฟอร์มมาตรฐานของบริษัทซึ่งมีวาระคงที่ 5 หัวข้อเสมอ (ห้ามเปลี่ยนชื่อหรือลำดับหัวข้อ ไม่ว่าเนื้อหาจะเป็นอย่างไร):
+1. รับรองรายงานการประชุม
+2. เรื่องแจ้งเพื่อทราบ
+3. เรื่องติดตาม
+4. เรื่องนำเสนอและเพิ่มเติมอื่นๆ
+5. ประชุมครั้งถัดไป
 
-บริบทโครงการ:
-- ชื่อโครงการ: ${proj.name} (รหัส ${proj.code})
-- เจ้าของงาน: ${proj.client || '-'}
-- ครั้งที่ประชุม: ${meta.no}
-- วันที่: ${toThaiDate(meta.today)}
-${formatHint}
+บริบท: โครงการ ${proj.name} (เจ้าของงาน ${proj.client || '-'})
+${styleHint}
 
 ศัพท์เฉพาะ/ชื่อที่อาจถูกถอดเสียงผิด ให้ช่วยแก้ให้ถูก: ${glossary.join(', ')}
 
@@ -203,22 +223,23 @@ ${transcript}
 """
 
 งานของคุณ:
-1) เรียบเรียงเป็นภาษาทางการ กระชับ ชัดเจน
-2) แตกออกเป็นวาระ (agenda) พร้อมสรุปการอภิปรายและ "มติที่ประชุม"
-3) ดึง Action Items ออกมาเป็นรายการ พร้อมผู้รับผิดชอบและกำหนดเสร็จ
-4) แยก "เรื่องสืบเนื่อง/ค้างจากครั้งก่อน" ที่ยังไม่ปิด พร้อมสถานะ
-5) ระบุนัดหมายครั้งต่อไป
+1) อ่าน transcript แล้วจัดแต่ละประเด็นเข้าหัวข้อวาระที่ตรงที่สุดจาก 5 หัวข้อข้างต้นเท่านั้น
+2) แต่ละประเด็นในแต่ละวาระ ระบุ: รายละเอียด (detail, เรียบเรียงเป็นภาษาทางการ), ผู้รับผิดชอบ (responsible เช่น "ALL" หรือชื่อ/ฝ่ายที่เกี่ยวข้อง), กำหนดเสร็จ (due), สถานะ (status เช่น "บันทึก" = รับทราบ/ดำเนินการแล้ว หรือ "ยังไม่คืบหน้า" ถ้าเป็นเรื่องค้างที่ยังไม่จบ)
+3) หัวข้อ "ประชุมครั้งถัดไป" ให้ใส่วันนัดครั้งหน้าเป็น 1 รายการถ้ามีพูดถึงใน transcript
+4) หัวข้อที่ไม่มีเนื้อหาเกี่ยวข้องเลยใน transcript ให้ส่ง items เป็น array ว่าง []
+5) ดึงชื่อการประชุม, ช่วงเวลา, สถานที่, และรายชื่อผู้เข้าร่วมประชุมจาก transcript ถ้ามีการพูดถึง
 
 ตอบกลับเป็น JSON อย่างเดียว ห้ามมี markdown หรือ codeblock ตามรูปแบบนี้:
 {
-  "meetingTitle": "ชื่อการประชุม",
-  "dateTime": "วัน–เวลา เช่น ${toThaiDate(meta.today)} เวลา 09:00 น.",
-  "location": "สถานที่",
-  "attendees": ["ชื่อ — ตำแหน่ง", "..."],
-  "agenda": [{"no":1,"topic":"...","discussion":"...","resolution":"..."}],
-  "actionItems": [{"task":"...","owner":"...","due":"..."}],
-  "carryForward": [{"item":"...","status":"..."}],
-  "nextMeeting": "..."
+  "meetingName": "ชื่อการประชุม",
+  "timeRange": "09.00 – 10.00 น.",
+  "location": "สถานที่ประชุม",
+  "attendees": ["ชื่อ (ชื่อเล่น)", "..."],
+  "topic1Items": [{"detail":"...","responsible":"ALL","due":"-","status":"บันทึก"}],
+  "topic2Items": [...],
+  "topic3Items": [...],
+  "topic4Items": [...],
+  "topic5Items": [...]
 }`
 }
 
@@ -500,13 +521,13 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
     setMom(null)
     const ph = setInterval(() => setGenPhase((p) => Math.min(p + 1, 2)), 950)
     const prompt = buildPrompt(transcript, proj, meta, formatRef, glossary)
-    let result = null
+    let raw = null
     try {
-      result = await callMOMAPI(prompt)
+      raw = await callMOMAPI(prompt)
     } catch (err) {
       console.warn('MOM generation fallback:', err)
     }
-    if (!result || !Array.isArray(result.agenda)) result = fallbackMOM(proj, meta)
+    const result = composeMom(raw, proj, meta)
     clearInterval(ph)
     setGenPhase(3)
     setMom(result)
@@ -519,7 +540,7 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
   }
 
   const exportWord = () => {
-    const inner = buildDocInner(mom, meta, screenshots)
+    const inner = buildDocInner(mom, meta, screenshots, uploaderName)
     const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>${EXPORT_CSS}</style></head><body>${inner}</body></html>`
     const blob = new Blob(['﻿', html], { type: 'application/msword' })
     const a = document.createElement('a')
@@ -539,7 +560,7 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
   const saveToSystem = async () => {
     setSaving(true)
     try {
-      const inner = buildDocInner(mom, meta, screenshots)
+      const inner = buildDocInner(mom, meta, screenshots, uploaderName)
       const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>${EXPORT_CSS}</style></head><body>${inner}</body></html>`
       const blob = new Blob(['﻿', html], { type: 'application/msword' })
       const fileName = `MOM_ประชุม-ครั้งที่-${meta.no}_${meta.today}.doc`
@@ -582,7 +603,7 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
       <div className="mom-inner">
         <div className="mom-stage-title">เลือกโครงการของการประชุม</div>
         <p className="mom-stage-desc">
-          ระบบจะเติมหัวรายงานอัตโนมัติ นับครั้งต่อจาก MOM เดิม และอ้างอิงรูปแบบฟอร์มจากรายงานล่าสุดของโครงการนั้น
+          ระบบจะสร้างรายงานตามฟอร์มมาตรฐานบริษัท (5 วาระคงที่) และนับครั้งประชุมต่อจาก MOM เดิมของโครงการนั้นให้อัตโนมัติ
         </p>
         <div className="mom-proj-grid">
           {projects.map((p) => (
@@ -622,7 +643,7 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
               </div>
               <div className="row">
                 <div className="k">รูปแบบฟอร์ม</div>
-                <div className="v tag">{formatRef ? `ตามฟอร์มของ ${formatRef.name}` : 'ฟอร์มกลางมาตรฐาน'}</div>
+                <div className="v tag">ฟอร์มมาตรฐานบริษัท (5 วาระคงที่){formatRef ? ` · อิงโทนภาษาจาก ${formatRef.name}` : ''}</div>
               </div>
             </div>
           </div>
@@ -834,7 +855,7 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
                 <Icon name="history" size={15} /> สร้างใหม่
               </button>
             </div>
-            <div className="mom-doc" dangerouslySetInnerHTML={{ __html: buildDocInner(mom, meta, screenshots) }} />
+            <div className="mom-doc" dangerouslySetInnerHTML={{ __html: buildDocInner(mom, meta, screenshots, uploaderName) }} />
           </div>
         )}
       </div>
