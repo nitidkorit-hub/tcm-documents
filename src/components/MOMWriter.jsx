@@ -49,7 +49,7 @@ const buildGlossary = (proj, files) => {
 }
 
 // ---------- document builder (shared by preview + export) ----------
-const buildDocInner = (mom, meta) => {
+const buildDocInner = (mom, meta, screenshots = []) => {
   const att = (mom.attendees || [])
     .map((a) => `<li>${escapeHtml(typeof a === 'string' ? a : a.name + (a.role ? ` — ${a.role}` : ''))}</li>`)
     .join('')
@@ -77,6 +77,15 @@ const buildDocInner = (mom, meta) => {
   const carry = (mom.carryForward || [])
     .map((c) => `<li>${escapeHtml(c.item)}${c.status ? `<span class="st">${escapeHtml(c.status)}</span>` : ''}</li>`)
     .join('')
+  const shots = (screenshots || [])
+    .map(
+      (s) => `
+    <div class="doc-shot">
+      <img src="${s.dataUrl}" alt="screenshot" />
+      ${s.caption ? `<div class="cap">${escapeHtml(s.caption)}</div>` : ''}
+    </div>`
+    )
+    .join('')
 
   return `
   <div class="doc-org">${escapeHtml(meta.org)}</div>
@@ -103,6 +112,8 @@ const buildDocInner = (mom, meta) => {
   </table>
 
   ${carry ? `<h4 class="doc-sec">เรื่องสืบเนื่อง / ติดตามจากครั้งก่อน</h4><ul class="doc-carry">${carry}</ul>` : ''}
+
+  ${shots ? `<h4 class="doc-sec">ภาพหน้าจอประกอบการประชุม</h4><div class="doc-shots">${shots}</div>` : ''}
 
   <h4 class="doc-sec">นัดหมายการประชุมครั้งต่อไป</h4>
   <div class="doc-next">${escapeHtml(mom.nextMeeting || '—')}</div>
@@ -136,6 +147,10 @@ table.doc-table td.c { text-align:center; color:#6B7280; }
 .owner { font-weight:600; color:#1F3A5F; }
 .due { color:#BE2A6E; }
 .doc-carry .st { font-size:12px; padding:1px 8px; border-radius:999px; background:rgba(245,166,35,0.16); color:#C77F00; font-weight:600; margin-left:6px; }
+.doc-shots { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:4px 0 8px; }
+.doc-shot { border:1px solid #E5E9EF; border-radius:8px; overflow:hidden; }
+.doc-shot img { width:100%; display:block; }
+.doc-shot .cap { font-size:12px; color:#6B7280; padding:6px 8px; border-top:1px solid #E5E9EF; }
 .doc-next { padding:12px 16px; background:#FCE7F2; border-radius:8px; }
 .doc-sign { display:grid; grid-template-columns:1fr 1fr; gap:40px; margin-top:48px; }
 .doc-sign .s { text-align:center; }
@@ -242,6 +257,8 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
   const [interim, setInterim] = useState('')
   const [bars, setBars] = useState(() => Array(21).fill(8))
   const [saving, setSaving] = useState(false)
+  const [sharingScreen, setSharingScreen] = useState(false)
+  const [screenshots, setScreenshots] = useState([])
 
   const timerRef = useRef(null)
   const recRef = useRef(null)
@@ -250,6 +267,8 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
   const audioCtxRef = useRef(null)
   const rafRef = useRef(null)
   const baseRef = useRef('')
+  const screenStreamRef = useRef(null)
+  const screenVideoRef = useRef(null)
 
   const proj = projId ? projects.find((p) => p.id === projId) : null
   const uploaderName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'ผู้ใช้'
@@ -295,7 +314,54 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
     return () => timerRef.current && clearInterval(timerRef.current)
   }, [recording])
 
-  useEffect(() => () => teardownRecording(), [])
+  useEffect(() => () => {
+    teardownRecording()
+    teardownScreenShare()
+  }, [])
+
+  const teardownScreenShare = () => {
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach((t) => t.stop())
+      screenStreamRef.current = null
+    }
+    setSharingScreen(false)
+  }
+
+  const startScreenShare = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true })
+      screenStreamRef.current = stream
+      const video = document.createElement('video')
+      video.srcObject = stream
+      video.muted = true
+      await video.play()
+      screenVideoRef.current = video
+      // if the user stops sharing via the browser's own UI, reflect that here
+      stream.getVideoTracks()[0].addEventListener('ended', () => teardownScreenShare())
+      setSharingScreen(true)
+    } catch (e) {
+      toast('ไม่ได้รับสิทธิ์แชร์หน้าจอ หรือถูกยกเลิก', 'err')
+    }
+  }
+
+  const captureScreenshot = () => {
+    const video = screenVideoRef.current
+    if (!video || !video.videoWidth) return
+    const canvas = document.createElement('canvas')
+    const MAX_W = 960
+    const scale = Math.min(1, MAX_W / video.videoWidth)
+    canvas.width = video.videoWidth * scale
+    canvas.height = video.videoHeight * scale
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.8)
+    setScreenshots((prev) => [...prev, { id: `${Date.now()}-${prev.length}`, dataUrl, caption: '', time: elapsed }])
+    toast('แคปหน้าจอแล้ว')
+  }
+
+  const removeScreenshot = (id) => setScreenshots((prev) => prev.filter((s) => s.id !== id))
+  const updateScreenshotCaption = (id, caption) =>
+    setScreenshots((prev) => prev.map((s) => (s.id === id ? { ...s, caption } : s)))
 
   const teardownRecording = () => {
     recActiveRef.current = false
@@ -453,7 +519,7 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
   }
 
   const exportWord = () => {
-    const inner = buildDocInner(mom, meta)
+    const inner = buildDocInner(mom, meta, screenshots)
     const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>${EXPORT_CSS}</style></head><body>${inner}</body></html>`
     const blob = new Blob(['﻿', html], { type: 'application/msword' })
     const a = document.createElement('a')
@@ -473,7 +539,7 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
   const saveToSystem = async () => {
     setSaving(true)
     try {
-      const inner = buildDocInner(mom, meta)
+      const inner = buildDocInner(mom, meta, screenshots)
       const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>${EXPORT_CSS}</style></head><body>${inner}</body></html>`
       const blob = new Blob(['﻿', html], { type: 'application/msword' })
       const fileName = `MOM_ประชุม-ครั้งที่-${meta.no}_${meta.today}.doc`
@@ -646,6 +712,43 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
             <div className="s">รองรับ MP3, WAV, M4A · ต้องต่อ Whisper/STT ก่อนใช้งานจริง (ยังไม่เปิดใช้)</div>
           </label>
         )}
+
+        <div className="mom-share-bar">
+          {!sharingScreen ? (
+            <>
+              <div className="lbl">
+                <b>แคปหน้าจอ</b> — เก็บภาพประเด็นสำคัญ (แบบ, สไลด์ ฯลฯ) ไว้แนบในรายงาน MOM
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={startScreenShare}>
+                <Icon name="monitor" size={14} /> เริ่มแชร์หน้าจอ
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="lbl">
+                <Icon name="monitor" size={14} style={{ verticalAlign: -2 }} /> กำลังแชร์หน้าจอ — แคปได้เรื่อยๆ ({screenshots.length} รูป)
+              </div>
+              <button className="btn btn-navy btn-sm" onClick={captureScreenshot}>
+                <Icon name="camera" size={14} /> แคปหน้าจอ
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={teardownScreenShare}>
+                หยุดแชร์
+              </button>
+            </>
+          )}
+        </div>
+        {screenshots.length > 0 && (
+          <div className="mom-shots">
+            {screenshots.map((s) => (
+              <div className="mom-shot-card" key={s.id}>
+                <img src={s.dataUrl} alt="screenshot" />
+                <button className="rm" onClick={() => removeScreenshot(s.id)} title="ลบรูปนี้">
+                  <Icon name="close" size={11} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     )
   } else if (step === 3) {
@@ -669,6 +772,28 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
             ))}
           </div>
         </div>
+        {screenshots.length > 0 && (
+          <div className="mom-glossary" style={{ marginTop: 16 }}>
+            <div className="h">
+              <Icon name="camera" size={14} /> ภาพหน้าจอที่แคปไว้ ({screenshots.length} รูป) — เพิ่มคำอธิบายสั้นๆ ได้
+            </div>
+            <div className="mom-shots-review">
+              {screenshots.map((s) => (
+                <div className="mom-shot-row" key={s.id}>
+                  <img src={s.dataUrl} alt="screenshot" />
+                  <input
+                    placeholder="คำอธิบายภาพ เช่น แบบ Rev2 จุดที่ท่อชนกัน"
+                    value={s.caption}
+                    onChange={(e) => updateScreenshotCaption(s.id, e.target.value)}
+                  />
+                  <button className="icon-btn danger" onClick={() => removeScreenshot(s.id)} title="ลบรูปนี้">
+                    <Icon name="trash" size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     )
   } else {
@@ -709,7 +834,7 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
                 <Icon name="history" size={15} /> สร้างใหม่
               </button>
             </div>
-            <div className="mom-doc" dangerouslySetInnerHTML={{ __html: buildDocInner(mom, meta) }} />
+            <div className="mom-doc" dangerouslySetInnerHTML={{ __html: buildDocInner(mom, meta, screenshots) }} />
           </div>
         )}
       </div>
