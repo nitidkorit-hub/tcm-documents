@@ -109,11 +109,26 @@ export async function fetchLatestFiles(limit = 10) {
   return data || [];
 }
 
+// Supabase Storage rejects object keys containing non-ASCII characters (e.g. Thai)
+// with "Invalid key" — sanitize only the storage path, keep the real filename
+// in the `name` column for display/download.
+function sanitizeStorageKey(filename) {
+  const dot = filename.lastIndexOf('.');
+  const base = dot > 0 ? filename.slice(0, dot) : filename;
+  const ext = dot > 0 ? filename.slice(dot) : '';
+  const safeBase = base
+    .normalize('NFKD')
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .replace(/_+/g, '_')
+    .slice(0, 150) || 'file';
+  return safeBase + ext;
+}
+
 export async function uploadFile(projectId, file, fileType, uploaderName, contentText = null) {
   const user = await getCurrentUser();
 
   // 1. Upload to storage
-  const fileName = `${projectId}/${Date.now()}-${file.name}`;
+  const fileName = `${projectId}/${Date.now()}-${sanitizeStorageKey(file.name)}`;
   const { data: storageData, error: storageError } = await supabase.storage
     .from('documents')
     .upload(fileName, file);
