@@ -1006,7 +1006,7 @@ input, textarea, select { font-family: inherit; }
   background: white; width: 100%; max-width: 760px;
   box-shadow: 0 8px 30px rgba(31,58,95,0.12); border: 1px solid var(--gray-200);
   border-radius: 6px; padding: 48px 52px; color: #000;
-  font-family: 'Angsana New','AngsanaUPC','Norasi','Times New Roman',serif; font-size: 17px; line-height: 1.5;
+  font-family: var(--doc-font, 'Angsana New','AngsanaUPC','Norasi','Times New Roman',serif); font-size: 17px; line-height: 1.5;
 }
 .mom-doc .doc-header { position: relative; padding-right: 90px; }
 .mom-doc .doc-logo { position: absolute; top: -4px; right: 0; width: 72px; height: auto; }

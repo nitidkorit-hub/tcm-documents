@@ -3,7 +3,8 @@ import Icon from './Icon.jsx'
 import { useToast } from './Toast.jsx'
 import { fetchFiles, uploadFile } from '../api/supabase.js'
 import { normalizeFile } from '../utils/format.js'
-import { TEAM_OM_LOGO } from '../assets/teamLogo.js'
+import MOMTemplateModal from './MOMTemplateModal.jsx'
+import { getProjectTopics, getProjectLogo, getProjectFontStack } from '../utils/momDefaults.js'
 
 // ---------- helpers ----------
 const TH_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม']
@@ -17,15 +18,10 @@ const toThaiDateLine = (iso) => {
   return `วัน${TH_DAYS[d.getDay()]}ที่ ${d.getDate()} ${TH_MONTHS[d.getMonth()]} พ.ศ. ${d.getFullYear() + 543}`
 }
 
-// Fixed 5-topic agenda — matches the company's standard MOM template exactly
-// (locked by request: topics/order never change, AI only fills content per topic)
-const TOPIC_DEFS = [
-  { no: 1, topic: 'รับรองรายงานการประชุม' },
-  { no: 2, topic: 'เรื่องแจ้งเพื่อทราบ' },
-  { no: 3, topic: 'เรื่องติดตาม' },
-  { no: 4, topic: 'เรื่องนำเสนอและเพิ่มเติมอื่นๆ' },
-  { no: 5, topic: 'ประชุมครั้งถัดไป' },
-]
+// Agenda topics/logo/font now come from the project's own template config
+// (see src/utils/momDefaults.js) — falls back to the company standard if a
+// project hasn't customized its own form yet.
+const topicDefsFor = (topics) => topics.map((topic, i) => ({ no: i + 1, topic }))
 const escapeHtml = (s) =>
   String(s == null ? '' : s)
     .replace(/&/g, '&amp;')
@@ -68,10 +64,10 @@ const buildGlossary = (proj, files) => {
 // Matches the company's real MOM template exactly: title/date/location header
 // (no org/project line), single วาระ table, one recorder signature, attendee
 // list as a numbered table on its own page.
-const buildDocInner = (mom, meta, screenshots = [], recorderName = '') => {
+const buildDocInner = (mom, meta, screenshots = [], recorderName = '', logoSrc = null) => {
   const header = `
   <div class="doc-header">
-    <img class="doc-logo" src="${TEAM_OM_LOGO}" alt="logo" />
+    ${logoSrc ? `<img class="doc-logo" src="${logoSrc}" alt="logo" />` : ''}
     <div class="doc-title">${escapeHtml(mom.meetingName)}</div>
     <div class="doc-datetime">${escapeHtml(mom.dateTimeLine)}</div>
     <div class="doc-location">สถานที่ประชุม : ${escapeHtml(mom.location)}</div>
@@ -145,17 +141,16 @@ const buildDocInner = (mom, meta, screenshots = [], recorderName = '') => {
   <div class="doc-footer">Page 2 of 2</div>`
 }
 
-const DOC_FONT = `'Angsana New','AngsanaUPC','Norasi','Times New Roman',serif`
 const EXPORT_CSS = `
-body { font-family: ${DOC_FONT}; color:#000; font-size:15px; line-height:1.5; padding:24px 32px; }
+body { font-family: var(--doc-font); color:#000; font-size:15px; line-height:1.5; padding:24px 32px; }
 .doc-header { position:relative; padding-right:90px; }
 .doc-logo { position:absolute; top:-4px; right:0; width:72px; height:auto; }
-.doc-title { text-align:center; font-family:${DOC_FONT}; font-weight:700; font-size:18px; margin:0 0 2px; }
-.doc-datetime, .doc-location { text-align:center; font-family:${DOC_FONT}; font-weight:700; font-size:15px; margin:0; }
+.doc-title { text-align:center; font-family:var(--doc-font); font-weight:700; font-size:18px; margin:0 0 2px; }
+.doc-datetime, .doc-location { text-align:center; font-family:var(--doc-font); font-weight:700; font-size:15px; margin:0; }
 .doc-fallback-warn { margin:10px 0 0; padding:8px 12px; background:#FFF7E6; border:1px solid #F5A623; border-radius:6px; color:#92600C; font-size:13px; text-align:center; font-family:'Sarabun',sans-serif; }
-h4.doc-sec { font-family:${DOC_FONT}; font-weight:700; font-size:16px; margin:18px 0 8px; }
+h4.doc-sec { font-family:var(--doc-font); font-weight:700; font-size:16px; margin:18px 0 8px; }
 table.doc-table { width:100%; border-collapse:collapse; font-size:14px; margin-top:14px; }
-table.doc-table th { background:#1F3A5F; color:#fff; font-family:${DOC_FONT}; font-weight:700; padding:6px 8px; text-align:center; border:1px solid #1F3A5F; }
+table.doc-table th { background:#1F3A5F; color:#fff; font-family:var(--doc-font); font-weight:700; padding:6px 8px; text-align:center; border:1px solid #1F3A5F; }
 table.doc-table td { padding:6px 8px; border:1px solid #000; vertical-align:top; }
 table.doc-table td.vno { text-align:center; font-weight:700; width:36px; }
 table.doc-table td.vtopic { font-weight:700; }
@@ -177,13 +172,17 @@ table.doc-attendee-table td.c { width:40px; text-align:center; color:#6B7280; }
 `
 
 // ---------- compose final doc model from raw AI output (or partial/no output) ----------
-// Topics are always the fixed 5 from TOPIC_DEFS — only "items" content varies.
-const composeMom = (raw, proj, meta) => {
+// Topics come from the project's own template (src/utils/momDefaults.js) —
+// AI only fills "items" content per topic, never invents/renames topics.
+const composeMom = (raw, proj, meta, topics) => {
   const usedFallback = !raw
+  // fallback dumps a transcript excerpt into whichever topic looks like the
+  // "general announcements" bucket (2nd topic by convention), else the 1st
+  const fallbackTopicIndex = topics.length > 1 ? 1 : 0
   const itemsFor = (i) => {
     const key = `topic${i}Items`
     if (Array.isArray(raw?.[key])) return raw[key]
-    if (usedFallback && i === 2) {
+    if (usedFallback && i === fallbackTopicIndex + 1) {
       return [
         {
           detail: meta.transcript
@@ -197,7 +196,7 @@ const composeMom = (raw, proj, meta) => {
     }
     return []
   }
-  const agenda = TOPIC_DEFS.map((t, i) => ({ ...t, items: itemsFor(i + 1) }))
+  const agenda = topicDefsFor(topics).map((t, i) => ({ ...t, items: itemsFor(i + 1) }))
   const timeRange = raw?.timeRange || '09.00 – 12.00 น.'
   const closingTime = raw?.closingTime || timeRange.split(/[–-]/).pop().trim()
 
@@ -212,17 +211,15 @@ const composeMom = (raw, proj, meta) => {
   }
 }
 
-const buildPrompt = (transcript, proj, meta, formatRef, glossary) => {
+const buildPrompt = (transcript, proj, meta, formatRef, glossary, topics) => {
   const styleHint = formatRef?.contentText
     ? `\nตัวอย่างโทนภาษา/ลีลาการเขียนจากรายงานก่อนหน้าของบริษัท (ใช้เป็นแนวทางโทนภาษาเท่านั้น ไม่ต้องคัดลอกเนื้อหา):\n"""\n${formatRef.contentText.slice(0, 1000)}\n"""`
     : ''
+  const topicList = topics.map((t, i) => `${i + 1}. ${t}`).join('\n')
+  const schemaFields = topics.map((_, i) => `  "topic${i + 1}Items": [${i === 0 ? '{"detail":"...","responsible":"ALL","due":"-","status":"บันทึก"}' : '...'}]`).join(',\n')
 
-  return `คุณเป็นเลขานุการที่ประชุมมืออาชีพของบริษัทรับเหมาก่อสร้าง หน้าที่คือเรียบเรียง "บันทึกการประชุม (MOM)" ภาษาไทยที่เป็นทางการ จากบทถอดเสียงดิบ ตามฟอร์มมาตรฐานของบริษัทซึ่งมีวาระคงที่ 5 หัวข้อเสมอ (ห้ามเปลี่ยนชื่อหรือลำดับหัวข้อ ไม่ว่าเนื้อหาจะเป็นอย่างไร):
-1. รับรองรายงานการประชุม
-2. เรื่องแจ้งเพื่อทราบ
-3. เรื่องติดตาม
-4. เรื่องนำเสนอและเพิ่มเติมอื่นๆ
-5. ประชุมครั้งถัดไป
+  return `คุณเป็นเลขานุการที่ประชุมมืออาชีพของบริษัทรับเหมาก่อสร้าง หน้าที่คือเรียบเรียง "บันทึกการประชุม (MOM)" ภาษาไทยที่เป็นทางการ จากบทถอดเสียงดิบ ตามฟอร์มมาตรฐานของโครงการนี้ซึ่งมีวาระคงที่เสมอ (ห้ามเปลี่ยนชื่อหรือลำดับหัวข้อ ไม่ว่าเนื้อหาจะเป็นอย่างไร):
+${topicList}
 
 บริบท: โครงการ ${proj.name} (เจ้าของงาน ${proj.client || '-'})
 ${styleHint}
@@ -235,23 +232,18 @@ ${transcript}
 """
 
 งานของคุณ:
-1) อ่าน transcript แล้วจัดแต่ละประเด็นเข้าหัวข้อวาระที่ตรงที่สุดจาก 5 หัวข้อข้างต้นเท่านั้น
+1) อ่าน transcript แล้วจัดแต่ละประเด็นเข้าหัวข้อวาระที่ตรงที่สุดจากหัวข้อข้างต้นเท่านั้น
 2) แต่ละประเด็นในแต่ละวาระ ระบุ: รายละเอียด (detail, เรียบเรียงเป็นภาษาทางการ), ผู้รับผิดชอบ (responsible เช่น "ALL" หรือชื่อ/ฝ่ายที่เกี่ยวข้อง), กำหนดเสร็จ (due), สถานะ (status เช่น "บันทึก" = รับทราบ/ดำเนินการแล้ว หรือ "ยังไม่คืบหน้า" ถ้าเป็นเรื่องค้างที่ยังไม่จบ)
-3) หัวข้อ "ประชุมครั้งถัดไป" ให้ใส่วันนัดครั้งหน้าเป็น 1 รายการถ้ามีพูดถึงใน transcript
-4) หัวข้อที่ไม่มีเนื้อหาเกี่ยวข้องเลยใน transcript ให้ส่ง items เป็น array ว่าง []
-5) ดึงชื่อการประชุม, ช่วงเวลา, สถานที่, และรายชื่อผู้เข้าร่วมประชุมจาก transcript ถ้ามีการพูดถึง
+3) หัวข้อที่ไม่มีเนื้อหาเกี่ยวข้องเลยใน transcript ให้ส่ง items เป็น array ว่าง []
+4) ดึงชื่อการประชุม, ช่วงเวลา, สถานที่, และรายชื่อผู้เข้าร่วมประชุมจาก transcript ถ้ามีการพูดถึง
 
-ตอบกลับเป็น JSON อย่างเดียว ห้ามมี markdown หรือ codeblock ตามรูปแบบนี้:
+ตอบกลับเป็น JSON อย่างเดียว ห้ามมี markdown หรือ codeblock ตามรูปแบบนี้ (topic1Items คือวาระที่ 1 ข้างต้น, topic2Items คือวาระที่ 2 ตามลำดับ):
 {
   "meetingName": "ชื่อการประชุม",
   "timeRange": "09.00 – 10.00 น.",
   "location": "สถานที่ประชุม",
   "attendees": ["ชื่อ (ชื่อเล่น)", "..."],
-  "topic1Items": [{"detail":"...","responsible":"ALL","due":"-","status":"บันทึก"}],
-  "topic2Items": [...],
-  "topic3Items": [...],
-  "topic4Items": [...],
-  "topic5Items": [...]
+${schemaFields}
 }`
 }
 
@@ -291,6 +283,7 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
   const [bars, setBars] = useState(() => Array(21).fill(8))
   const [saving, setSaving] = useState(false)
   const [sharingScreen, setSharingScreen] = useState(false)
+  const [templateOpen, setTemplateOpen] = useState(false)
   const [screenshots, setScreenshots] = useState([])
 
   const timerRef = useRef(null)
@@ -336,6 +329,9 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
   )
   const formatRef = proj ? latestMOM(projFiles) : null
   const glossary = proj ? buildGlossary(proj, projFiles) : []
+  const topics = proj ? getProjectTopics(proj) : []
+  const logoSrc = proj ? getProjectLogo(proj) : null
+  const fontStack = proj ? getProjectFontStack(proj) : undefined
 
   // recording timer
   useEffect(() => {
@@ -532,14 +528,14 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
     setGenPhase(0)
     setMom(null)
     const ph = setInterval(() => setGenPhase((p) => Math.min(p + 1, 2)), 950)
-    const prompt = buildPrompt(transcript, proj, meta, formatRef, glossary)
+    const prompt = buildPrompt(transcript, proj, meta, formatRef, glossary, topics)
     let raw = null
     try {
       raw = await callMOMAPI(prompt)
     } catch (err) {
       console.warn('MOM generation fallback:', err)
     }
-    const result = composeMom(raw, proj, meta)
+    const result = composeMom(raw, proj, meta, topics)
     clearInterval(ph)
     setGenPhase(3)
     setMom(result)
@@ -552,8 +548,8 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
   }
 
   const exportWord = () => {
-    const inner = buildDocInner(mom, meta, screenshots, uploaderName)
-    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>${EXPORT_CSS}</style></head><body>${inner}</body></html>`
+    const inner = buildDocInner(mom, meta, screenshots, uploaderName, logoSrc)
+    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>${EXPORT_CSS}</style></head><body style="--doc-font:${fontStack}">${inner}</body></html>`
     const blob = new Blob(['﻿', html], { type: 'application/msword' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
@@ -572,8 +568,8 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
   const saveToSystem = async () => {
     setSaving(true)
     try {
-      const inner = buildDocInner(mom, meta, screenshots, uploaderName)
-      const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>${EXPORT_CSS}</style></head><body>${inner}</body></html>`
+      const inner = buildDocInner(mom, meta, screenshots, uploaderName, logoSrc)
+      const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>${EXPORT_CSS}</style></head><body style="--doc-font:${fontStack}">${inner}</body></html>`
       const blob = new Blob(['﻿', html], { type: 'application/msword' })
       const fileName = `MOM_ประชุม-ครั้งที่-${meta.no}_${meta.today}.doc`
       const file = new File([blob], fileName, { type: 'application/msword' })
@@ -655,9 +651,14 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
               </div>
               <div className="row">
                 <div className="k">รูปแบบฟอร์ม</div>
-                <div className="v tag">ฟอร์มมาตรฐานบริษัท (5 วาระคงที่){formatRef ? ` · อิงโทนภาษาจาก ${formatRef.name}` : ''}</div>
+                <div className="v tag">
+                  ฟอร์มของโครงการนี้ ({topics.length} วาระ){formatRef ? ` · อิงโทนภาษาจาก ${formatRef.name}` : ''}
+                </div>
               </div>
             </div>
+            <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 12 }} onClick={() => setTemplateOpen(true)}>
+              <Icon name="layers" size={13} /> ตั้งค่า Form MOM ของโครงการนี้
+            </button>
           </div>
         )}
       </div>
@@ -876,7 +877,11 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
                 <Icon name="history" size={15} /> สร้างใหม่
               </button>
             </div>
-            <div className="mom-doc" dangerouslySetInnerHTML={{ __html: buildDocInner(mom, meta, screenshots, uploaderName) }} />
+            <div
+              className="mom-doc"
+              style={{ '--doc-font': fontStack }}
+              dangerouslySetInnerHTML={{ __html: buildDocInner(mom, meta, screenshots, uploaderName, logoSrc) }}
+            />
           </div>
         )}
       </div>
@@ -959,6 +964,14 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
       <div className="mom-foot">
         <div className="mom-foot-inner">{footer}</div>
       </div>
+
+      {templateOpen && proj && (
+        <MOMTemplateModal
+          project={proj}
+          onClose={() => setTemplateOpen(false)}
+          onSaved={onSaved}
+        />
+      )}
     </div>
   )
 }

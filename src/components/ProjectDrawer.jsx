@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import Icon from './Icon.jsx'
 import { useToast } from './Toast.jsx'
-import { fetchFiles, deleteFile, downloadFile, deleteProject, getFileBlob, updateFileContent } from '../api/supabase.js'
+import { fetchFiles, fetchProjects, deleteFile, downloadFile, deleteProject, getFileBlob, updateFileContent } from '../api/supabase.js'
 import { fmtSize, fmtDate, normalizeFile, computeIsLatest, TYPE_LABEL, TYPE_COLOR, TYPE_BG, TYPE_TEXT } from '../utils/format.js'
 import { extractTextFromBlobDetailed, RESULT } from '../utils/textExtract.js'
 import PreviewModal from './PreviewModal.jsx'
+import MOMTemplateModal from './MOMTemplateModal.jsx'
 
 function FileRow({ file, onDelete, onDownload, onPreview }) {
   const color = TYPE_COLOR[file.type] || '#6B7280'
@@ -60,11 +61,22 @@ export default function ProjectDrawer({ project, refreshKey, onClose, onChanged 
   const [reindexProgress, setReindexProgress] = useState({ current: 0, total: 0 })
   const [reindexReport, setReindexReport] = useState(null) // { ok, failed: [{name, reason}], empty: [{name, reason}] }
   const [previewFile, setPreviewFile] = useState(null)
+  const [templateOpen, setTemplateOpen] = useState(false)
   const toast = useToast()
+
+  const [projectData, setProjectData] = useState(project)
 
   useEffect(() => {
     if (!project) return
     load()
+    // keep mom_topics/mom_logo/mom_font fresh after editing the MOM template
+    // without requiring the drawer to be closed and reopened
+    fetchProjects()
+      .then((rows) => {
+        const fresh = rows.find((p) => p.id === project.id)
+        if (fresh) setProjectData(fresh)
+      })
+      .catch(() => {})
   }, [project, refreshKey])
 
   const load = async () => {
@@ -249,6 +261,18 @@ export default function ProjectDrawer({ project, refreshKey, onClose, onChanged 
             <button
               className="btn btn-sm"
               style={{
+                background: 'rgba(255,255,255,0.15)',
+                color: 'white',
+                border: '1px solid rgba(255,255,255,0.2)',
+              }}
+              onClick={() => setTemplateOpen(true)}
+              title="ปรับวาระ/โลโก้/ฟอนต์ของรายงาน MOM สำหรับโครงการนี้"
+            >
+              <Icon name="doc-text" size={13} /> ตั้งค่า Form MOM
+            </button>
+            <button
+              className="btn btn-sm"
+              style={{
                 background: 'rgba(229,72,77,0.2)',
                 color: 'white',
                 border: '1px solid rgba(229,72,77,0.4)',
@@ -344,6 +368,10 @@ export default function ProjectDrawer({ project, refreshKey, onClose, onChanged 
 
       {previewFile && (
         <PreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
+      )}
+
+      {templateOpen && (
+        <MOMTemplateModal project={projectData} onClose={() => setTemplateOpen(false)} onSaved={onChanged} />
       )}
     </>
   )

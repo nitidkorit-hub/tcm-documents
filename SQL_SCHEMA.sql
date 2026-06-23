@@ -17,7 +17,11 @@ CREATE TABLE IF NOT EXISTS projects (
   status TEXT DEFAULT 'กำลังดำเนินการ',
   created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
+  updated_at TIMESTAMP DEFAULT NOW(),
+  -- per-project AI MOM Writer template (added for multi-form support)
+  mom_topics JSONB DEFAULT '["รับรองรายงานการประชุม","เรื่องแจ้งเพื่อทราบ","เรื่องติดตาม","เรื่องนำเสนอและเพิ่มเติมอื่นๆ","ประชุมครั้งถัดไป"]'::jsonb,
+  mom_logo TEXT,
+  mom_font TEXT DEFAULT 'Angsana New'
 );
 
 -- ============================================================
