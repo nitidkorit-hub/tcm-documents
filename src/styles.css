@@ -1005,31 +1005,34 @@ input, textarea, select { font-family: inherit; }
 .mom-doc {
   background: white; width: 100%; max-width: 760px;
   box-shadow: 0 8px 30px rgba(31,58,95,0.12); border: 1px solid var(--gray-200);
-  border-radius: 6px; padding: 52px 56px; color: #1B1F26;
-  font-family: 'Sarabun'; font-size: 14px; line-height: 1.65;
+  border-radius: 6px; padding: 48px 52px; color: #000;
+  font-family: 'Angsana New','AngsanaUPC','Norasi','Times New Roman',serif; font-size: 17px; line-height: 1.5;
 }
-.mom-doc .doc-title { text-align: center; font-family: 'Prompt'; font-weight: 700; font-size: 17px; color: #1B1F26; margin: 0 0 2px; }
-.mom-doc .doc-datetime, .mom-doc .doc-location { text-align: center; font-family: 'Prompt'; font-weight: 600; font-size: 13px; color: var(--gray-700); margin: 0; }
-.mom-doc .doc-fallback-warn { margin: 10px 0 0; padding: 8px 12px; background: #FFF7E6; border: 1px solid var(--amber); border-radius: 6px; color: #92600C; font-size: 12px; text-align: center; }
-.mom-doc h4.doc-sec { font-family: 'Prompt'; font-weight: 600; font-size: 15px; color: var(--navy); margin: 22px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--gray-200); }
-.mom-doc table.doc-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 18px; }
-.mom-doc table.doc-table th { background: var(--navy); color: white; font-family: 'Prompt'; font-weight: 500; padding: 7px 8px; text-align: center; border: 1px solid var(--navy); }
-.mom-doc table.doc-table td { padding: 7px 8px; border: 1px solid var(--gray-200); vertical-align: top; }
-.mom-doc table.doc-table td.vno { text-align: center; font-family: 'Prompt'; font-weight: 600; color: var(--navy); width: 36px; }
-.mom-doc table.doc-table td.vtopic { font-family: 'Prompt'; font-weight: 600; color: #1B1F26; }
+.mom-doc .doc-header { position: relative; padding-right: 90px; }
+.mom-doc .doc-logo { position: absolute; top: -4px; right: 0; width: 72px; height: auto; }
+.mom-doc .doc-title { text-align: center; font-weight: 700; font-size: 20px; color: #000; margin: 0 0 2px; }
+.mom-doc .doc-datetime, .mom-doc .doc-location { text-align: center; font-weight: 700; font-size: 16px; color: #000; margin: 0; }
+.mom-doc .doc-fallback-warn { margin: 10px 0 0; padding: 8px 12px; background: #FFF7E6; border: 1px solid var(--amber); border-radius: 6px; color: #92600C; font-size: 13px; text-align: center; font-family: 'Sarabun', sans-serif; }
+.mom-doc h4.doc-sec { font-weight: 700; font-size: 17px; color: #000; margin: 18px 0 8px; }
+.mom-doc table.doc-table { width: 100%; border-collapse: collapse; font-size: 15px; margin-top: 16px; }
+.mom-doc table.doc-table th { background: var(--navy); color: white; font-weight: 700; padding: 7px 8px; text-align: center; border: 1px solid var(--navy); }
+.mom-doc table.doc-table td { padding: 7px 8px; border: 1px solid #000; vertical-align: top; }
+.mom-doc table.doc-table td.vno { text-align: center; font-weight: 700; width: 36px; }
+.mom-doc table.doc-table td.vtopic { font-weight: 700; }
 .mom-doc table.doc-table td.detail { white-space: pre-line; }
-.mom-doc table.doc-table td.c { text-align: center; color: var(--gray-700); white-space: nowrap; }
-.mom-doc .doc-closing { font-family: 'Prompt'; font-weight: 600; color: var(--navy); margin-top: 14px; }
+.mom-doc table.doc-table td.c { text-align: center; white-space: nowrap; }
+.mom-doc .doc-closing { font-weight: 700; margin-top: 14px; }
 .mom-doc .doc-recorder { margin-top: 48px; text-align: right; padding-right: 24px; }
-.mom-doc .doc-recorder .role { font-family: 'Prompt'; font-weight: 600; font-size: 13px; color: var(--navy); }
-.mom-doc .doc-recorder .name { font-size: 13px; margin-top: 2px; color: var(--gray-700); }
+.mom-doc .doc-recorder .role { font-weight: 700; font-size: 16px; }
+.mom-doc .doc-recorder .name { font-size: 16px; margin-top: 2px; }
+.mom-doc .doc-footer { text-align: right; font-size: 13px; color: var(--gray-500); margin-top: 24px; font-family: 'Sarabun', sans-serif; }
 .mom-doc .doc-page-break { border-top: 1px dashed var(--gray-300); margin: 32px 0; position: relative; }
 .mom-doc .doc-page-break::after {
   content: 'หน้าถัดไป (รายชื่อผู้เข้าร่วมประชุม)'; position: absolute; top: -9px; left: 50%; transform: translateX(-50%);
-  background: white; padding: 0 10px; font-size: 11px; color: var(--gray-400);
+  background: white; padding: 0 10px; font-size: 11px; color: var(--gray-400); font-family: 'Sarabun', sans-serif;
 }
-.mom-doc table.doc-attendee-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; }
-.mom-doc table.doc-attendee-table td { padding: 7px 10px; border: 1px solid var(--gray-200); }
+.mom-doc table.doc-attendee-table { width: 100%; border-collapse: collapse; font-size: 15px; margin-top: 12px; }
+.mom-doc table.doc-attendee-table td { padding: 7px 10px; border: 1px solid #000; }
 .mom-doc table.doc-attendee-table td.c { width: 40px; text-align: center; color: var(--gray-500); }
 
 /* screen capture */

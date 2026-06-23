@@ -3,6 +3,7 @@ import Icon from './Icon.jsx'
 import { useToast } from './Toast.jsx'
 import { fetchFiles, uploadFile } from '../api/supabase.js'
 import { normalizeFile } from '../utils/format.js'
+import { TEAM_OM_LOGO } from '../assets/teamLogo.js'
 
 // ---------- helpers ----------
 const TH_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม']
@@ -69,9 +70,12 @@ const buildGlossary = (proj, files) => {
 // list as a numbered table on its own page.
 const buildDocInner = (mom, meta, screenshots = [], recorderName = '') => {
   const header = `
-  <div class="doc-title">${escapeHtml(mom.meetingName)}</div>
-  <div class="doc-datetime">${escapeHtml(mom.dateTimeLine)}</div>
-  <div class="doc-location">สถานที่ประชุม : ${escapeHtml(mom.location)}</div>
+  <div class="doc-header">
+    <img class="doc-logo" src="${TEAM_OM_LOGO}" alt="logo" />
+    <div class="doc-title">${escapeHtml(mom.meetingName)}</div>
+    <div class="doc-datetime">${escapeHtml(mom.dateTimeLine)}</div>
+    <div class="doc-location">สถานที่ประชุม : ${escapeHtml(mom.location)}</div>
+  </div>
   ${mom._fallback ? `<div class="doc-fallback-warn">⚠ AI ไม่พร้อมใช้งานตอนสร้างรายงานนี้ — เนื้อหาเป็นสรุปพื้นฐานอัตโนมัติ ยังไม่ผ่านการตรวจสอบ</div>` : ''}`
 
   const agendaRows = (mom.agenda || [])
@@ -130,39 +134,44 @@ const buildDocInner = (mom, meta, screenshots = [], recorderName = '') => {
     <div class="role">ผู้บันทึกประชุม</div>
     <div class="name">${escapeHtml(recorderName)}</div>
   </div>
+  <div class="doc-footer">Page 1 of 2</div>
 
   <div class="doc-page-break"></div>
   ${header}
   <h4 class="doc-sec">รายชื่อผู้เข้าร่วมประชุม</h4>
   <table class="doc-attendee-table">
     <tbody>${attendeeRows || '<tr><td class="c">-</td><td>—</td></tr>'}</tbody>
-  </table>`
+  </table>
+  <div class="doc-footer">Page 2 of 2</div>`
 }
 
+const DOC_FONT = `'Angsana New','AngsanaUPC','Norasi','Times New Roman',serif`
 const EXPORT_CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600&family=Sarabun:wght@400;500;600;700&display=swap');
-body { font-family: 'Sarabun','TH Sarabun New',sans-serif; color:#1B1F26; font-size:14px; line-height:1.65; padding:24px; }
-.doc-title { text-align:center; font-family:'Prompt'; font-weight:700; font-size:16px; margin:0 0 2px; }
-.doc-datetime, .doc-location { text-align:center; font-family:'Prompt'; font-weight:600; font-size:13px; margin:0; }
-.doc-fallback-warn { margin:10px 0 0; padding:8px 12px; background:#FFF7E6; border:1px solid #F5A623; border-radius:6px; color:#92600C; font-size:12px; text-align:center; }
-h4.doc-sec { font-family:'Prompt'; font-weight:600; font-size:15px; color:#1F3A5F; margin:22px 0 10px; padding-bottom:6px; border-bottom:1px solid #E5E9EF; }
-table.doc-table { width:100%; border-collapse:collapse; font-size:13px; margin-top:16px; }
-table.doc-table th { background:#1F3A5F; color:#fff; font-family:'Prompt'; font-weight:500; padding:6px 8px; text-align:center; border:1px solid #1F3A5F; }
-table.doc-table td { padding:6px 8px; border:1px solid #E5E9EF; vertical-align:top; }
-table.doc-table td.vno { text-align:center; font-family:'Prompt'; font-weight:600; color:#1F3A5F; width:36px; }
-table.doc-table td.vtopic { font-family:'Prompt'; font-weight:600; color:#1B1F26; }
+body { font-family: ${DOC_FONT}; color:#000; font-size:15px; line-height:1.5; padding:24px 32px; }
+.doc-header { position:relative; padding-right:90px; }
+.doc-logo { position:absolute; top:-4px; right:0; width:72px; height:auto; }
+.doc-title { text-align:center; font-family:${DOC_FONT}; font-weight:700; font-size:18px; margin:0 0 2px; }
+.doc-datetime, .doc-location { text-align:center; font-family:${DOC_FONT}; font-weight:700; font-size:15px; margin:0; }
+.doc-fallback-warn { margin:10px 0 0; padding:8px 12px; background:#FFF7E6; border:1px solid #F5A623; border-radius:6px; color:#92600C; font-size:13px; text-align:center; font-family:'Sarabun',sans-serif; }
+h4.doc-sec { font-family:${DOC_FONT}; font-weight:700; font-size:16px; margin:18px 0 8px; }
+table.doc-table { width:100%; border-collapse:collapse; font-size:14px; margin-top:14px; }
+table.doc-table th { background:#1F3A5F; color:#fff; font-family:${DOC_FONT}; font-weight:700; padding:6px 8px; text-align:center; border:1px solid #1F3A5F; }
+table.doc-table td { padding:6px 8px; border:1px solid #000; vertical-align:top; }
+table.doc-table td.vno { text-align:center; font-weight:700; width:36px; }
+table.doc-table td.vtopic { font-weight:700; }
 table.doc-table td.detail { white-space:pre-line; }
-table.doc-table td.c { text-align:center; color:#1B1F26; white-space:nowrap; }
+table.doc-table td.c { text-align:center; white-space:nowrap; }
 .doc-shots { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:16px 0 8px; }
 .doc-shot { border:1px solid #E5E9EF; border-radius:8px; overflow:hidden; }
 .doc-shot img { width:100%; display:block; }
-.doc-shot .cap { font-size:12px; color:#6B7280; padding:6px 8px; border-top:1px solid #E5E9EF; }
-.doc-closing { font-family:'Prompt'; font-weight:600; margin-top:14px; }
+.doc-shot .cap { font-size:13px; color:#6B7280; padding:6px 8px; border-top:1px solid #E5E9EF; font-family:'Sarabun',sans-serif; }
+.doc-closing { font-weight:700; margin-top:14px; }
 .doc-recorder { margin-top:48px; text-align:right; padding-right:24px; }
-.doc-recorder .role { font-family:'Prompt'; font-weight:600; font-size:13px; }
-.doc-recorder .name { font-size:13px; margin-top:2px; }
+.doc-recorder .role { font-weight:700; font-size:15px; }
+.doc-recorder .name { font-size:15px; margin-top:2px; }
+.doc-footer { text-align:right; font-size:12px; color:#555; margin-top:24px; }
 .doc-page-break { page-break-before: always; height:0; }
-table.doc-attendee-table { width:100%; border-collapse:collapse; font-size:13px; margin-top:12px; }
+table.doc-attendee-table { width:100%; border-collapse:collapse; font-size:14px; margin-top:12px; }
 table.doc-attendee-table td { padding:6px 10px; border:1px solid #E5E9EF; }
 table.doc-attendee-table td.c { width:40px; text-align:center; color:#6B7280; }
 `
