@@ -1,15 +1,39 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Icon from './Icon.jsx'
 import { useToast } from './Toast.jsx'
-import { updateProject } from '../api/supabase.js'
-import { DEFAULT_MOM_TOPICS, DEFAULT_MOM_LOGO, MOM_FONT_OPTIONS, getProjectTopics, getProjectFontStack } from '../utils/momDefaults.js'
+import { updateProject, fetchProjects } from '../api/supabase.js'
+import {
+  DEFAULT_MOM_TOPICS,
+  DEFAULT_MOM_LOGO,
+  MOM_FONT_OPTIONS,
+  getProjectTopics,
+  getProjectLogo,
+  getProjectFontStack,
+} from '../utils/momDefaults.js'
 
 export default function MOMTemplateModal({ project, onClose, onSaved }) {
   const [topics, setTopics] = useState(() => [...getProjectTopics(project)])
   const [logo, setLogo] = useState(() => (project.mom_logo === '' ? null : project.mom_logo || DEFAULT_MOM_LOGO))
   const [font, setFont] = useState(project.mom_font || 'Angsana New')
   const [saving, setSaving] = useState(false)
+  const [otherProjects, setOtherProjects] = useState([])
+  const [copyFromId, setCopyFromId] = useState('')
   const toast = useToast()
+
+  useEffect(() => {
+    fetchProjects()
+      .then((rows) => setOtherProjects(rows.filter((p) => p.id !== project.id)))
+      .catch(() => {})
+  }, [project.id])
+
+  const handleCopyFrom = () => {
+    const src = otherProjects.find((p) => p.id === copyFromId)
+    if (!src) return
+    setTopics([...getProjectTopics(src)])
+    setLogo(getProjectLogo(src))
+    setFont(src.mom_font || 'Angsana New')
+    toast(`คัดลอกฟอร์มจาก ${src.name} แล้ว — ตรวจสอบก่อนกดบันทึก`)
+  }
 
   const updateTopic = (i, value) => setTopics((prev) => prev.map((t, idx) => (idx === i ? value : t)))
   const removeTopic = (i) => setTopics((prev) => (prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev))
@@ -73,6 +97,25 @@ export default function MOMTemplateModal({ project, onClose, onSaved }) {
           </button>
         </div>
         <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+          {otherProjects.length > 0 && (
+            <div className="field">
+              <label>คัดลอกฟอร์มจากโครงการอื่น</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <select value={copyFromId} onChange={(e) => setCopyFromId(e.target.value)} style={{ flex: 1 }}>
+                  <option value="">เลือกโครงการ...</option>
+                  {otherProjects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.code})
+                    </option>
+                  ))}
+                </select>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={handleCopyFrom} disabled={!copyFromId}>
+                  <Icon name="history" size={13} /> คัดลอกมาใช้
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="field">
             <label>วาระการประชุม (เรียงตามลำดับ)</label>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
