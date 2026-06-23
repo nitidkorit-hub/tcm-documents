@@ -71,7 +71,8 @@ const buildDocInner = (mom, meta, screenshots = [], recorderName = '') => {
   const header = `
   <div class="doc-title">${escapeHtml(mom.meetingName)}</div>
   <div class="doc-datetime">${escapeHtml(mom.dateTimeLine)}</div>
-  <div class="doc-location">สถานที่ประชุม : ${escapeHtml(mom.location)}</div>`
+  <div class="doc-location">สถานที่ประชุม : ${escapeHtml(mom.location)}</div>
+  ${mom._fallback ? `<div class="doc-fallback-warn">⚠ AI ไม่พร้อมใช้งานตอนสร้างรายงานนี้ — เนื้อหาเป็นสรุปพื้นฐานอัตโนมัติ ยังไม่ผ่านการตรวจสอบ</div>` : ''}`
 
   const agendaRows = (mom.agenda || [])
     .map((t) => {
@@ -143,6 +144,7 @@ const EXPORT_CSS = `
 body { font-family: 'Sarabun','TH Sarabun New',sans-serif; color:#1B1F26; font-size:14px; line-height:1.65; padding:24px; }
 .doc-title { text-align:center; font-family:'Prompt'; font-weight:700; font-size:16px; margin:0 0 2px; }
 .doc-datetime, .doc-location { text-align:center; font-family:'Prompt'; font-weight:600; font-size:13px; margin:0; }
+.doc-fallback-warn { margin:10px 0 0; padding:8px 12px; background:#FFF7E6; border:1px solid #F5A623; border-radius:6px; color:#92600C; font-size:12px; text-align:center; }
 h4.doc-sec { font-family:'Prompt'; font-weight:600; font-size:15px; color:#1F3A5F; margin:22px 0 10px; padding-bottom:6px; border-bottom:1px solid #E5E9EF; }
 table.doc-table { width:100%; border-collapse:collapse; font-size:13px; margin-top:16px; }
 table.doc-table th { background:#1F3A5F; color:#fff; font-family:'Prompt'; font-weight:500; padding:6px 8px; text-align:center; border:1px solid #1F3A5F; }
@@ -197,6 +199,7 @@ const composeMom = (raw, proj, meta) => {
     closingTime,
     agenda,
     attendees: Array.isArray(raw?.attendees) ? raw.attendees : [],
+    _fallback: usedFallback,
   }
 }
 
@@ -835,6 +838,15 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
           </div>
         ) : (
           <div className="mom-doc-wrap">
+            {mom._fallback && (
+              <div className="mom-fallback-warn">
+                <Icon name="bell" size={15} />
+                <div>
+                  <b>AI ไม่พร้อมใช้งานตอนนี้</b> — รายงานนี้เป็น<b>สรุปพื้นฐานอัตโนมัติ</b> (นำ Transcript บางส่วนมาแปะตรงๆ) ไม่ใช่การวิเคราะห์โดย AI
+                  กรุณาตรวจและแก้ไขทุกวาระด้วยตนเองก่อนบันทึก หรือกด "สร้างใหม่" อีกครั้งหลัง AI กลับมาใช้งานได้
+                </div>
+              </div>
+            )}
             <div className="mom-export-bar">
               <button className="btn btn-pink" onClick={saveToSystem} disabled={saving}>
                 <Icon name="save" size={15} /> {saving ? 'กำลังบันทึก...' : 'บันทึกเข้าโครงการ'}
