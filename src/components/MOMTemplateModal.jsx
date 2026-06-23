@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import Icon from './Icon.jsx'
 import { useToast } from './Toast.jsx'
-import { updateProject, fetchProjects } from '../api/supabase.js'
+import { updateProject, fetchProjects, fetchFiles, getFileBlob } from '../api/supabase.js'
+import { normalizeFile } from '../utils/format.js'
+import { extractPdfFormHints, fontHintToOption } from '../utils/pdfFormExtract.js'
 import {
   DEFAULT_MOM_TOPICS,
   DEFAULT_MOM_LOGO,
@@ -11,18 +13,27 @@ import {
   getProjectFontStack,
 } from '../utils/momDefaults.js'
 
+const findLatestMomFile = (files) =>
+  files.find((f) => f.type === 'mom' && f.isLatest) ||
+  files.filter((f) => f.type === 'mom').sort((a, b) => new Date(b.date) - new Date(a.date))[0] ||
+  null
+
 export default function MOMTemplateModal({ project, onClose, onSaved }) {
   const [topics, setTopics] = useState(() => [...getProjectTopics(project)])
   const [logo, setLogo] = useState(() => (project.mom_logo === '' ? null : project.mom_logo || DEFAULT_MOM_LOGO))
   const [font, setFont] = useState(project.mom_font || 'Angsana New')
   const [saving, setSaving] = useState(false)
-  const [otherProjects, setOtherProjects] = useState([])
+  const [allProjects, setAllProjects] = useState([])
   const [copyFromId, setCopyFromId] = useState('')
+  const [analyzeProjectId, setAnalyzeProjectId] = useState(project.id)
+  const [analyzing, setAnalyzing] = useState(false)
   const toast = useToast()
+
+  const otherProjects = allProjects.filter((p) => p.id !== project.id)
 
   useEffect(() => {
     fetchProjects()
-      .then((rows) => setOtherProjects(rows.filter((p) => p.id !== project.id)))
+      .then((rows) => setAllProjects(rows))
       .catch(() => {})
   }, [project.id])
 
@@ -33,6 +44,72 @@ export default function MOMTemplateModal({ project, onClose, onSaved }) {
     setLogo(getProjectLogo(src))
     setFont(src.mom_font || 'Angsana New')
     toast(`คัดลอกฟอร์มจาก ${src.name} แล้ว — ตรวจสอบก่อนกดบันทึก`)
+  }
+
+  const handleAnalyzeDocument = async () => {
+    const srcProject = allProjects.find((p) => p.id === analyzeProjectId)
+    if (!srcProject) return
+    setAnalyzing(true)
+    try {
+      const rows = await fetchFiles(srcProject.id)
+      const files = rows.map(normalizeFile)
+      const momFile = findLatestMomFile(files)
+      if (!momFile) {
+        toast(`โครงการ ${srcProject.name} ยังไม่มีไฟล์ MOM`, 'err')
+        return
+      }
+      if (!momFile.contentText || !momFile.contentText.trim()) {
+        toast('ไฟล์นี้ยังไม่มีเนื้อหาที่สกัดไว้ — กรุณา Re-index เนื้อหาในโครงการนั้นก่อน', 'err')
+        return
+      }
+
+      let gotSomething = false
+
+      // 1) topics via AI reading the document's extracted text
+      try {
+        const res = await fetch('/api/extract-form', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contentText: momFile.contentText }),
+        })
+        const data = await res.json()
+        if (Array.isArray(data.topics) && data.topics.length) {
+          setTopics(data.topics)
+          gotSomething = true
+        }
+      } catch (err) {
+        console.warn('topic extraction failed:', err.message)
+      }
+
+      // 2) logo + font hint — PDF only
+      if (momFile.ext === 'pdf') {
+        try {
+          const blob = await getFileBlob(momFile.storagePath)
+          const { logo: extractedLogo, fontHint } = await extractPdfFormHints(blob)
+          if (extractedLogo) {
+            setLogo(extractedLogo)
+            gotSomething = true
+          }
+          if (fontHint) {
+            setFont(fontHintToOption(fontHint))
+            gotSomething = true
+          }
+        } catch (err) {
+          console.warn('pdf visual analysis failed:', err.message)
+        }
+      }
+
+      toast(
+        gotSomething
+          ? `วิเคราะห์ฟอร์มจาก "${momFile.name}" เรียบร้อย — ตรวจสอบก่อนกดบันทึก`
+          : 'วิเคราะห์ไม่สำเร็จ ลองใหม่ หรือแก้ไขเองด้านล่าง',
+        gotSomething ? 'ok' : 'err'
+      )
+    } catch (err) {
+      toast('วิเคราะห์ไม่สำเร็จ: ' + err.message, 'err')
+    } finally {
+      setAnalyzing(false)
+    }
   }
 
   const updateTopic = (i, value) => setTopics((prev) => prev.map((t, idx) => (idx === i ? value : t)))
@@ -97,9 +174,32 @@ export default function MOMTemplateModal({ project, onClose, onSaved }) {
           </button>
         </div>
         <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+          {allProjects.length > 0 && (
+            <div className="field">
+              <label>
+                <Icon name="sparkles" size={13} style={{ verticalAlign: -2 }} /> วิเคราะห์ฟอร์มจากเอกสาร MOM จริง
+              </label>
+              <p style={{ fontSize: 12, color: 'var(--gray-500)', margin: '0 0 8px' }}>
+                ให้ AI อ่านไฟล์ MOM ล่าสุดของโครงการที่เลือก แล้วดึงวาระ/โลโก้/ฟอนต์ออกมาให้อัตโนมัติ (โลโก้+ฟอนต์รองรับเฉพาะไฟล์ PDF)
+              </p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <select value={analyzeProjectId} onChange={(e) => setAnalyzeProjectId(e.target.value)} style={{ flex: 1 }}>
+                  {allProjects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.code}){p.id === project.id ? ' · โครงการนี้' : ''}
+                    </option>
+                  ))}
+                </select>
+                <button type="button" className="btn btn-navy btn-sm" onClick={handleAnalyzeDocument} disabled={analyzing}>
+                  <Icon name="sparkles" size={13} /> {analyzing ? 'กำลังวิเคราะห์...' : 'วิเคราะห์ฟอร์ม'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {otherProjects.length > 0 && (
             <div className="field">
-              <label>คัดลอกฟอร์มจากโครงการอื่น</label>
+              <label>คัดลอกฟอร์มที่ตั้งค่าไว้แล้วจากโครงการอื่น</label>
               <div style={{ display: 'flex', gap: 8 }}>
                 <select value={copyFromId} onChange={(e) => setCopyFromId(e.target.value)} style={{ flex: 1 }}>
                   <option value="">เลือกโครงการ...</option>

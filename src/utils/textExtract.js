@@ -5,7 +5,7 @@ const MAX_TEXT_LENGTH = 50000 // limit storage per file (50KB text)
 
 // PDF.js setup using CDN worker (more reliable across builds)
 let pdfjsInstance = null
-async function getPDFJS() {
+export async function getPDFJS() {
   if (pdfjsInstance) return pdfjsInstance
   const pdfjs = await import('pdfjs-dist')
   try {
