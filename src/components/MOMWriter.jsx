@@ -226,6 +226,12 @@ ${styleHint}
 
 ศัพท์เฉพาะ/ชื่อที่อาจถูกถอดเสียงผิด ให้ช่วยแก้ให้ถูก: ${glossary.join(', ')}
 
+หมายเหตุสำคัญเกี่ยวกับคุณภาพ transcript:
+- transcript ด้านล่างอาจมาจาก auto-transcription ของ Teams/Zoom หรือถอดเสียงสด ซึ่งมักมีปัญหา: ไม่มีวรรคตอน, ไม่มีชื่อผู้พูดกำกับ (หรือกำกับผิดคน), คำซ้ำ/คำเติม ("เอ่อ", "ครับ", "นะครับ"), ประโยคขาดตอน, ศัพท์เทคนิคถอดผิด
+- ให้ใช้บริบทรอบข้างช่วยตีความเจตนาที่แท้จริง ไม่ต้องแปลตรงตัวคำต่อคำ เรียบเรียงใหม่เป็นภาษาทางการที่อ่านลื่น ตัดคำเติม/คำซ้ำที่ไม่มีความหมายออก
+- ถ้าทั้งประโยคกำกวมจนตีความไม่ได้จริงๆ ให้สรุปเท่าที่จับใจความได้ ไม่ต้องเดามั่วเติมข้อมูลที่ไม่มีในเนื้อหา
+- ถ้า transcript สั้นเกินไปหรือไม่มีเนื้อหาที่เข้าวาระใดได้เลย ให้ส่ง items เป็น array ว่าง [] สำหรับวาระนั้น ไม่ต้องฝืนยัดเนื้อหา
+
 บทถอดเสียงดิบ:
 """
 ${transcript}
@@ -235,7 +241,7 @@ ${transcript}
 1) อ่าน transcript แล้วจัดแต่ละประเด็นเข้าหัวข้อวาระที่ตรงที่สุดจากหัวข้อข้างต้นเท่านั้น
 2) แต่ละประเด็นในแต่ละวาระ ระบุ: รายละเอียด (detail, เรียบเรียงเป็นภาษาทางการ), ผู้รับผิดชอบ (responsible เช่น "ALL" หรือชื่อ/ฝ่ายที่เกี่ยวข้อง), กำหนดเสร็จ (due), สถานะ (status เช่น "บันทึก" = รับทราบ/ดำเนินการแล้ว หรือ "ยังไม่คืบหน้า" ถ้าเป็นเรื่องค้างที่ยังไม่จบ)
 3) หัวข้อที่ไม่มีเนื้อหาเกี่ยวข้องเลยใน transcript ให้ส่ง items เป็น array ว่าง []
-4) ดึงชื่อการประชุม, ช่วงเวลา, สถานที่, และรายชื่อผู้เข้าร่วมประชุมจาก transcript ถ้ามีการพูดถึง
+4) ดึงชื่อการประชุม, ช่วงเวลา, สถานที่, และรายชื่อผู้เข้าร่วมประชุมจาก transcript ถ้ามีการพูดถึง — ถ้าไม่มีให้เว้นว่างไว้ ไม่ต้องเดา
 
 ตอบกลับเป็น JSON อย่างเดียว ห้ามมี markdown หรือ codeblock ตามรูปแบบนี้ (topic1Items คือวาระที่ 1 ข้างต้น, topic2Items คือวาระที่ 2 ตามลำดับ):
 {
@@ -343,6 +349,18 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
     return () => timerRef.current && clearInterval(timerRef.current)
   }, [recording])
 
+  // warn when switching away from the tab mid-recording — backgrounded tabs
+  // can get throttled/suspended by the browser and silently drop the recording
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden && recActiveRef.current) {
+        toast('กำลังอัดเสียงอยู่ — อยู่หน้าจออื่นนานเกินไปอาจทำให้การอัดหยุดโดยไม่รู้ตัว กรุณากลับมาที่แท็บนี้เป็นระยะ', 'err')
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [])
+
   useEffect(() => () => {
     teardownRecording()
     teardownScreenShare()
@@ -416,38 +434,70 @@ export default function MOMWriter({ projects, user, onClose, onSaved }) {
     }
   }
 
+  // (re)acquires the mic + wires the waveform analyser; also watches for the
+  // track ending unexpectedly (e.g. OS revokes it while tab is backgrounded)
+  // and tries once to reacquire automatically instead of silently going dead
+  const setupMicAnalyser = async () => {
+    // clean up any previous analyser/rAF loop before wiring a new one
+    // (e.g. on automatic reconnect) so loops don't stack up
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
+    }
+    if (audioCtxRef.current) {
+      try {
+        audioCtxRef.current.close()
+      } catch (e) {}
+      audioCtxRef.current = null
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop())
+      streamRef.current = null
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    streamRef.current = stream
+    const AC = window.AudioContext || window.webkitAudioContext
+    const ctx = new AC()
+    audioCtxRef.current = ctx
+    const analyser = ctx.createAnalyser()
+    analyser.fftSize = 64
+    ctx.createMediaStreamSource(stream).connect(analyser)
+    const data = new Uint8Array(analyser.frequencyBinCount)
+    let last = 0
+    const tick = () => {
+      analyser.getByteFrequencyData(data)
+      const now = performance.now()
+      if (now - last > 45) {
+        last = now
+        const n = 21
+        const arr = []
+        for (let i = 0; i < n; i++) {
+          const v = data[Math.floor((i / n) * data.length)] || 0
+          arr.push(8 + (v / 255) * 42)
+        }
+        setBars(arr)
+      }
+      rafRef.current = requestAnimationFrame(tick)
+    }
+    tick()
+
+    stream.getAudioTracks()[0].addEventListener('ended', () => {
+      if (!recActiveRef.current) return
+      toast('ไมโครโฟนหลุดการเชื่อมต่อ กำลังลองเชื่อมต่อใหม่...', 'err')
+      setupMicAnalyser().catch(() => {
+        setRecError('ไมโครโฟนหลุดและเชื่อมต่อใหม่ไม่ได้ — กรุณากดหยุดแล้วอัดใหม่')
+      })
+    })
+  }
+
   const startRecording = async () => {
     setRecError(null)
     setInterim('')
     baseRef.current = transcript ? transcript.trim() + ' ' : ''
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      streamRef.current = stream
-      const AC = window.AudioContext || window.webkitAudioContext
-      const ctx = new AC()
-      audioCtxRef.current = ctx
-      const analyser = ctx.createAnalyser()
-      analyser.fftSize = 64
-      ctx.createMediaStreamSource(stream).connect(analyser)
-      const data = new Uint8Array(analyser.frequencyBinCount)
-      let last = 0
-      const tick = () => {
-        analyser.getByteFrequencyData(data)
-        const now = performance.now()
-        if (now - last > 45) {
-          last = now
-          const n = 21
-          const arr = []
-          for (let i = 0; i < n; i++) {
-            const v = data[Math.floor((i / n) * data.length)] || 0
-            arr.push(8 + (v / 255) * 42)
-          }
-          setBars(arr)
-        }
-        rafRef.current = requestAnimationFrame(tick)
-      }
-      tick()
+      await setupMicAnalyser()
     } catch (e) {
       setRecError('ไม่สามารถเข้าถึงไมโครโฟนได้ — กรุณาอนุญาตสิทธิ์ไมโครโฟนในเบราว์เซอร์ แล้วลองใหม่')
       return
